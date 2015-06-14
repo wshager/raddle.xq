@@ -261,10 +261,10 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
     let $query := replace($query,"%2C",",")
     let $query :=
         if($raddle:jsonQueryCompatible) then
-            let $query := fn:replace($query,"%3C=","=le=")
-            let $query := fn:replace($query,"%3E=","=ge=")
-            let $query := fn:replace($query,"%3C","=lt=")
-            let $query := fn:replace($query,"%3E","=gt=")
+            let $query := replace($query,"%3C=","=le=")
+            let $query := replace($query,"%3E=","=ge=")
+            let $query := replace($query,"%3C","=lt=")
+            let $query := replace($query,"%3E","=gt=")
             return $query
         else
             $query
@@ -293,17 +293,19 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
     return local:set-conjunction($query)
 };
 
-declare function raddle:wrap($defs,$value,$i,$o,$a,$acc){
+declare function raddle:wrap($dict,$value,$i,$o,$a,$acc){
     let $v := array:head($value)
     let $arity := count($v("args"))
     let $aname := $v("name") || "#" || $arity
     let $def := map:get($dict,$aname)
+    let $f := function-lookup($v("name"),$arity)
     (:if(!$def) {
         throw new Error("Definition for "+aname+" not in dictionary")
     }
     if(i and !self.matchTypes(i,def.sigs[0])){
         throw new Error("Type signatures do not match: "+i+"->"+def.sigs[0])
     }:)
+    (: accumulator is a composed function :)
     let $acc := insert-before($acc,1,"(" || $def("body") || ")(")
     (: TODO static arg type checks
     let $err :=
@@ -360,12 +362,7 @@ declare function raddle:wrap($defs,$value,$i,$o,$a,$acc){
             $acc
 };
 
-declare function raddle:compile($defs,$dicts,$value,$parent,$pa){
-    let $name :=
-        if($parent) then
-            $parent("name")
-        else
-            "anon"
+declare function raddle:compile($dict,$value,$parent,$pa){
     (: if there are unknown args, take them from the definition :)
     let $arity := count($args)
     let $a :=
@@ -374,7 +371,7 @@ declare function raddle:compile($defs,$dicts,$value,$parent,$pa){
     let $fa := insert-before($fa,1,"arg0")
     let $fargs := string-join($fa,",")
     (: compose the functions in the value array :)
-    let $f := raddle:wrap($defs,$value,$sigs[1],$sigs[2],(if($parent) then $a else $pa),[])
+    let $f := raddle:wrap($dict,$value,$sigs[1],$sigs[2],(if($parent) then $a else $pa),[])
     (: put default input arg in a :)
     let $a := insert-before($a,1,"arg0")
     let $f := insert-before($f,count($f)/2,string-join($a,","))
