@@ -293,87 +293,88 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
     return local:set-conjunction($query)
 };
 
-declare function raddle:wrap($dict,$value,$i,$o,$a,$acc){
-    let $v := array:head($value)
-    let $arity := count($v("args"))
-    let $aname := $v("name") || "#" || $arity
-    let $def := map:get($dict,$aname)
-    let $f := function-lookup($v("name"),$arity)
-    (:if(!$def) {
-        throw new Error("Definition for "+aname+" not in dictionary")
-    }
-    if(i and !self.matchTypes(i,def.sigs[0])){
-        throw new Error("Type signatures do not match: "+i+"->"+def.sigs[0])
-    }:)
-    (: accumulator is a composed function :)
-    let $acc := insert-before($acc,1,"(" || $def("body") || ")(")
-    (: TODO static arg type checks
-    let $err :=
-        if($v("args")) then
-            if(!$def("args") or count($v("args")) != size($def("args"))) then
-                throw new Error("Argument length incorrect")
-            else if(def.args) then
-                throw new Error("No arguments supplied")
-            else 
-                ():)
-    let $args := array:for-each($v("args"),function($_,$i){
-        if($_ = "?") then
-            head($a)
-        else if($_ instance of array(item()?)) then
-            (: compile to function :)
-            let $f := raddle:compile($defs,$_,(),$a)
-            return $f
-        (:
-        } else if(typeOf(_) == "query"){
-            // compile and execute with args
-            // TODO execute with provided args
-            // if input is null and no args, exec with null
-            let $f := self.compile(_,null,a,true)
-            console.warn(f.toString())
-            return f.toString()
-        :)
-        else
-            let $t := $def("args")[$i]
-            let $r := raddle:convert($_)
-            let $r := 
-                if($r instance of xs:string and matches($r,"^.+#[0-9]+$/")) then
-                    map:get($dict,$r)("body")
-                else
-                    $r
-            (: check type here :)
-            (:if(!self.typeCheck(r,t)){
-                throw new Error("Expected type ",t," for argument value ",r)
-            }
-            if(typeof r == "function"){
-                return r.toString()
-            } else {
-                return JSON.stringify(r)
-            }:)
-            return $r
-    })
-    let $acc := insert-before($acc,(if(count($args)) then "," else "") || string-join($args,",")  || ")")
-    return
-        if(count($value) > 2) then
-            raddle:wrap(tail($value),map:get($def,"sigs")[2],$o,$a,$acc)
-        else
-            (:if(o and !self.matchTypes(o,def.sigs[1])){
-                throw new Error("Type signatures do not match: "+o+"->"+def.sigs[1])
-            }:)
-            $acc
-};
-
 declare function raddle:compile($dict,$value,$parent,$pa){
+    let $name :=
+        if($parent) then
+            $parent("name")
+        else
+            "anon" || count($defs)
     (: if there are unknown args, take them from the definition :)
-    let $arity := count($args)
+    let $arity := array:size($args)
     let $a :=
         for $i in 1 to $arity return "arg" || $i
     let $fa := subsequence($a,2)
-    let $fa := insert-before($fa,1,"arg0")
     let $fargs := string-join($fa,",")
+    (: always compose :)
+    let $value :=
+    	if($value instance of array(item()?)) then
+   			$value
+   		else
+   			array { $value }
     (: compose the functions in the value array :)
-    let $f := raddle:wrap($dict,$value,$sigs[1],$sigs[2],(if($parent) then $a else $pa),[])
-    (: put default input arg in a :)
-    let $a := insert-before($a,1,"arg0")
-    let $f := insert-before($f,count($f)/2,string-join($a,","))
-    return $f
+    let $f := array:for-each($value,function($v){
+            let $acc := []
+            let $arity := array:size($v("args"))
+            let $name := $v("name")
+            let $aname := concat((if(contains($name,":")) then
+                    $name
+                else
+                    "fn:" || $name),"#",$arity)
+            let $def := $dict($aname)
+            let $acc := array:append(raddle:short($aname))
+            let $args := array:map($v("args"),function($_,$i){
+                if($_ = (".","?")) then
+                    $_
+                else if($_ instance of array(item()?)) then
+                    raddle:compile($_,(),$a)
+                else
+                    let $r := raddle:convert($_)
+                    return
+                    if($r instance of xs:string and matches($r,"^.+#[0-9]+$/")) then
+                        let $aname := 
+                            if(contains($r,":")) then
+                                $r
+                            else
+                                "fn:" || $r
+                        return raddle:short($aname)
+                    else
+                        $r
+            })
+            return array:append($acc,$args)
+        })
+    (: get exec :)
+    let $exec := ()
+    let $fn := array:fold-left($f,"arg0",function($pre,$cur){
+      let $f := $cur(1) || "("
+      let $args := $cur(2)
+      let $f := 
+          if(array:head($args) = ".") then
+              $f
+          else
+              $pre || "," || $f
+      let $args :=
+          if(array:head($args) = ".") then
+              array:insert-before(array:tail($args),1,$pre)
+          else
+              $args
+      return $f || string-join($args,",") || ")"
+    })
+    let $fargs := string-join($fa,",")
+    let $fns :=
+        (:if($top) {
+            for(var i=0;i<this.cache.length;i++){
+                var d = this.dict[this.cache[i]]; 
+                if(d && this.lib[d.module][d.aname]){
+                    fns += "var "+short(d)+"="+this.lib[d.module][d.aname].toString()+";\n";
+                }
+            }
+        }:)
+        "&#13;"
+    let $func := "function " || $name || "(" || $fargs || "){ " || $fns || "return " || $fs || "}"
+    (:if(!exec || top){
+        return func;
+    } else {
+        return func.toString()+"()";
+    }:)
+    return $func
 };
