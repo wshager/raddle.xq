@@ -293,88 +293,88 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
     return local:set-conjunction($query)
 };
 
+declare variable $raddle:auto-converted := map {
+    "true" := "true()",
+    "false" := "false()",
+    "null" := "()",
+    "undefined" := "()",
+    "Infinity" := "1 div 0e0",
+    "-Infinity" := "-1 div 0e0"
+};
+
+declare function raddle:convert($string){
+    if(map:contains($raddle:auto-converted,$string)) then
+        $raddle:auto-converted($string)
+    else
+        let $number := number($string)
+        return
+            if(string($number) ne 'NaN') then
+                util:unescape-uri($string,"UTF-8")
+                (:if(exports.jsonQueryCompatible){
+                    if(string.charAt(0) == "'" && string.charAt(string.length-1) == "'"){
+                        return JSON.parse('"' + string.substring(1,string.length-1) + '"');
+                    }
+                }):)
+            else
+                $number
+};
+
 declare function raddle:compile($dict,$value,$parent,$pa){
-    let $name :=
+    let $arity :=
         if($parent) then
-            $parent("name")
+            array:size($parent("args"))
         else
-            "anon" || count($defs)
-    (: if there are unknown args, take them from the definition :)
-    let $arity := array:size($args)
+            0
     let $a :=
-        for $i in 1 to $arity return "arg" || $i
+        for $i in 1 to $arity return "$arg" || $i
     let $fa := subsequence($a,2)
     let $fargs := string-join($fa,",")
     (: always compose :)
     let $value :=
-    	if($value instance of array(item()?)) then
-   			$value
-   		else
-   			array { $value }
+        if($value instance of array(item()?)) then
+               $value
+           else
+               array { $value }
     (: compose the functions in the value array :)
     let $f := array:for-each($value,function($v){
-            let $acc := []
-            let $arity := array:size($v("args"))
-            let $name := $v("name")
-            let $aname := concat((if(contains($name,":")) then
-                    $name
-                else
-                    "fn:" || $name),"#",$arity)
-            let $def := $dict($aname)
-            let $acc := array:append(raddle:short($aname))
-            let $args := array:map($v("args"),function($_,$i){
-                if($_ = (".","?")) then
-                    $_
-                else if($_ instance of array(item()?)) then
-                    raddle:compile($_,(),$a)
-                else
-                    let $r := raddle:convert($_)
-                    return
-                    if($r instance of xs:string and matches($r,"^.+#[0-9]+$/")) then
-                        let $aname := 
-                            if(contains($r,":")) then
-                                $r
-                            else
-                                "fn:" || $r
-                        return raddle:short($aname)
-                    else
-                        $r
-            })
-            return array:append($acc,$args)
+        let $acc := []
+        let $arity := array:size($v("args"))
+        let $name := $v("name")
+        let $aname := concat($name,"#",$arity)
+        let $def := $dict($aname)
+        let $acc := array:append($acc,$aname)
+        let $args := array:for-each($v("args"),function($_){
+            if($_ = (".","?")) then
+                $_
+            else if($_ instance of array(item()?)) then
+                raddle:compile($dict,$_,(),$a)
+            else
+                raddle:convert($_)
         })
-    (: get exec :)
+        return array:append($acc,$args)
+    })
+    (: TODO get exec :)
     let $exec := ()
-    let $fn := array:fold-left($f,"arg0",function($pre,$cur){
-      let $f := $cur(1) || "("
+    let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
+      let $f := $cur(1)
       let $args := $cur(2)
-      let $f := 
-          if(array:head($args) = ".") then
-              $f
-          else
-              $pre || "," || $f
       let $args :=
-          if(array:head($args) = ".") then
+          if(string(array:head($args)) = ".") then
               array:insert-before(array:tail($args),1,$pre)
           else
               $args
-      return $f || string-join($args,",") || ")"
+      return
+          if(string(array:head($args)) = ".") then
+              "apply(" || $f || ",[" || string-join(array:flatten($args),",") || "])"
+          else
+              "(" || $pre || ", apply(" || $f || ",[" || string-join(array:flatten($args),",") || "]))"
     })
-    let $fargs := string-join($fa,",")
-    let $fns :=
-        (:if($top) {
-            for(var i=0;i<this.cache.length;i++){
-                var d = this.dict[this.cache[i]]; 
-                if(d && this.lib[d.module][d.aname]){
-                    fns += "var "+short(d)+"="+this.lib[d.module][d.aname].toString()+";\n";
-                }
-            }
-        }:)
-        "&#13;"
-    let $func := "function " || $name || "(" || $fargs || "){ " || $fns || "return " || $fs || "}"
-    (:if(!exec || top){
-        return func;
-    } else {
-        return func.toString()+"()";
-    }:)
+    let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
+    let $func := "function(" || $fargs || "){ " || $fn || "}"
+    (:if(!$exec or $top) then
+        $func
+    else
+        $func || "(())"
+    :)
     return $func
 };
