@@ -1,6 +1,7 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
+import module namespace json="http://www.json.org";
 
 
 declare variable $raddle:chars := "\+\*\$\-:\w%\._\/?#";
@@ -23,48 +24,60 @@ declare function raddle:parse($query as xs:string) {
     raddle:parse($query, ())
 };
 
+declare function raddle:get-index($close,$open){
+    for $i in 1 to count($close) return
+        if($open[$i] < $close[$i]) then
+            raddle:get-index(tail($close),tail($open))
+        else
+            $close[$i]
+};
+
+declare function raddle:wrap($analysis,$ret){
+    let $x := head($analysis)
+    let $closedParen := $x/fn:group[@nr=1]/text()
+    let $delim := $x/fn:group[@nr=2]/text()
+    let $propertyOrValue := $x/fn:group[@nr=3]/text()
+    let $openParen := $x/fn:group[@nr=4]/text()
+    let $rest := tail($analysis)
+    return
+        if($openParen) then
+            let $close :=
+                for $i in 1 to count($rest) return 
+                    if($rest[$i]/fn:group[@nr=1]/text()) then
+                        $i
+                    else
+                        ()
+            let $open :=
+                for $i in 1 to count($rest) return 
+                    if($rest[$i]/fn:group[@nr=4]/text()) then
+                        $i
+                    else
+                        ()
+            let $index := raddle:get-index($close,$open)[1]
+            let $next := subsequence($rest,1,$index)
+            let $ret := 
+                if($propertyOrValue) then
+                    array:append($ret,map { "name" := $propertyOrValue, "args" := raddle:wrap($next,[])})
+                else
+                    array:append($ret,raddle:wrap($next,[]))
+            return raddle:wrap(subsequence($rest,$index,count($rest)),$ret)
+        else if($closedParen) then
+            raddle:wrap($rest,$ret)
+        else if($propertyOrValue or $delim eq ",") then
+            let $ret := array:append($ret,$propertyOrValue)
+            return raddle:wrap($rest,$ret)
+        else
+            $ret
+};
+
 declare function raddle:parse($query as xs:string?, $parameters as xs:anyAtomicType?) {
     let $query:= raddle:normalize-query($query,$parameters)
     return if($query ne "") then
         let $analysis := analyze-string($query, $raddle:leftoverRegExp)
-        let $analysis :=
-            for $x in $analysis/* return
-                    if(name($x) eq "non-match") then
-                        replace(replace($x,",",""),"\(","<args>")
-                    else
-                        let $property := $x/fn:group[@nr=1]/text()
-                        let $operator := $x/fn:group[@nr=2]/text()
-                        let $value := $x/fn:group[@nr=4]/text()
-                        let $closedParen := $x/fn:group[@nr=1]/text()
-                        let $delim := $x/fn:group[@nr=2]/text()
-                        let $propertyOrValue := $x/fn:group[@nr=3]/text()
-                        let $openParen := $x/fn:group[@nr=4]/text()
-
-                let $r := 
-                    if($openParen) then
-                        concat($propertyOrValue,"(")
-                    else if($closedParen) then
-                        ")"
-                    else if($propertyOrValue or $delim eq ",") then
-                        $propertyOrValue
-                    else
-                        ()
-                return for $s in $r return
-                    (: treat number separately, throws error on compare :)
-                    if(string(number($s)) ne "NaN") then
-                        concat("<args>",$s, "</args>")
-                    else if(matches($s,"^.*\($")) then
-                        concat("<args><name>",replace($s,"\(",""),"</name>")
-                    else if($s eq ")") then 
-                        "</args>"
-                    else if($s eq ",") then 
-                        "</args><args>"
-                    else 
-                        concat("<args>",$s, "</args>")
-        let $q := string-join($analysis,"")
-        return util:parse(string-join(concat("<root>",$q,"</root>"),""))
+        let $ret := raddle:wrap($analysis/*,[])
+        return $ret
     else
-        <args/>
+        []
 };
 
 declare function local:no-conjunction($seq,$hasopen) {
@@ -251,6 +264,7 @@ declare function local:set-conjunction($query as xs:string) {
     return concat($pre,string-join($groups,""),string-join($post,""))
 };
 
+
 declare function raddle:normalize-query($query as xs:string?, $parameters as xs:anyAtomicType?){
     let $query :=
         if(not($query)) then
@@ -319,6 +333,63 @@ declare function raddle:convert($string){
                 $number
 };
 
+declare function raddle:use($value,$params){
+	let $mods := $value("args")
+	let $map := doc($params("raddled") || "/map.xml")/root/module
+	let $reqs := array:for-each($mods,function($_){
+		let $uri := xs:anyURI($map[@rdl = $_]/@xq)
+		let $module := inspect:inspect-module-uri($uri)
+		return try {
+			util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
+		} catch * {
+			()
+		}
+	})
+	return array:for-each($mods,function($_){
+		let $src := util:binary-doc($params("raddled") || "/raddled/" || $_ || ".rdl")
+		let $parsed := raddle:parse($src)
+		return
+			if(array:size($parsed("args")) > 0) then
+				raddle:process($parsed,map:new(($params,map {"use" := $_})))
+			else
+				()
+	})
+};
+
+declare function raddle:process($value,$params){
+    if($value instance of array(item()?)) then
+        array:for-each($value,function($_) {
+            raddle:process($_,$params)
+        })
+	else if($value("name") = "use") then
+		raddle:use($value,$params)
+	else if($value("name") = "define") then
+		raddle:define($value,$params)
+	else if(not($value("name")) and map:contains($value,"args")) then
+		let $use := 
+			array:filter($value("args"),function($arg){
+				$arg("name")="use"
+			})
+		let $define := 
+			array:filter($value("args"),function($arg){
+				$arg("name")="define"
+			})
+		let $process := 
+			array:filter($value("args"),function($arg){
+				not($arg("name") = ("use","define"))
+			})
+		return
+			(
+				array:for-each($use,function($_) { raddle:use($_,$params) }),
+				array:for-each($define,function($_) { raddle:define($_,$params) }),
+				array:for-each($process,function($_) { raddle:process($_,$params) })
+			)
+				
+	else
+		raddle:compile(map {}, map:new(($value, map { "top" := true() })),(),())
+};
+
+
 declare function raddle:compile($dict,$value,$parent,$pa){
     let $arity :=
         if($parent) then
@@ -377,4 +448,51 @@ declare function raddle:compile($dict,$value,$parent,$pa){
         $func || "(())"
     :)
     return $func
+};
+
+
+declare function raddle:define($value,$params){
+	let $l := array:size($value("args"))
+	let $name := $value("args")(1)
+	let $parts := tokenize($name,":")
+	let $ns :=
+		if(count($parts)>1) then
+			$parts[1]
+		else
+			()
+	let $def :=
+		if($l=2) then
+			let $def := $params("dict")($name)
+			let $arity := array:size($def("args"))
+			return map:new(($def,map:entry("qname",$name || "#" || $arity)))
+		else
+			let $args := $value("args")(2)
+			let $arity := array:size($args)
+			let $type := $value("args")(3)
+			let $ns :=
+				if($ns) then
+					$ns
+				else if($l=3) then
+					"local"
+				else
+					tokenize($params("use"),"/")[1]
+			let $qname :=
+				if(contains($name,":")) then
+					$name
+				else
+					$ns || ":" || $name
+			let $qname := $qname || "#" || $arity
+			return
+				if(map:contains($params("dict"),$qname)) then
+					map:get($params("dict"),$qname)
+				else
+					map {
+						"name" := $name,
+						"qname" := $qname,
+						"ns" := $ns,
+						"type" := $type,
+						"args" := $args,
+						"body" := if($l=3) then () else $value("args")(4)
+					}
+	return $def
 };
