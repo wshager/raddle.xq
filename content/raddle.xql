@@ -24,12 +24,19 @@ declare function raddle:parse($query as xs:string) {
     raddle:parse($query, ())
 };
 
-declare function raddle:get-index($close,$open){
-    for $i in 1 to count($close) return
-        if($open[$i] < $close[$i]) then
-            raddle:get-index(tail($close),tail($open))
+declare function raddle:get-index($close,$open,$ret){
+    let $l := count($close)
+    return
+        if(empty($ret) and $l > 0) then
+            let $ret :=
+                for $i in 1 to $l return
+                    if($open[$i] < $close[$i]) then
+                        ()
+                    else
+                        $close[$i]
+            return raddle:get-index(tail($close),tail($open),$ret)
         else
-            $close[$i]
+            $ret
 };
 
 declare function raddle:wrap($analysis,$ret){
@@ -53,7 +60,7 @@ declare function raddle:wrap($analysis,$ret){
                         $i
                     else
                         ()
-            let $index := raddle:get-index($close,$open)[1]
+            let $index := raddle:get-index($close,$open,())[1]
             let $next := subsequence($rest,1,$index)
             let $ret := 
                 if($propertyOrValue) then
@@ -270,7 +277,7 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
         if(not($query)) then
             ""
         else
-            replace($query," ","%20")
+            replace(replace($query,"&#10;|&#13;","")," ","%20")
     let $query := replace($query,"%3A",":")
     let $query := replace($query,"%2C",",")
     let $query :=
@@ -322,78 +329,74 @@ declare function raddle:convert($string){
     else
         let $number := number($string)
         return
-            if(string($number) ne 'NaN') then
-                util:unescape-uri($string,"UTF-8")
-                (:if(exports.jsonQueryCompatible){
-                    if(string.charAt(0) == "'" && string.charAt(string.length-1) == "'"){
-                        return JSON.parse('"' + string.substring(1,string.length-1) + '"');
-                    }
-                }):)
+            if(string($number) = 'NaN') then
+                "'" || util:unescape-uri($string,"UTF-8") || "'"
             else
                 $number
 };
 
 declare function raddle:use($value,$params){
-	let $mods := $value("args")
-	let $map := doc($params("raddled") || "/map.xml")/root/module
-	let $reqs := array:for-each($mods,function($_){
-		let $uri := xs:anyURI($map[@rdl = $_]/@xq)
-		let $module := inspect:inspect-module-uri($uri)
-		return try {
-			util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
-		} catch * {
-			()
-		}
-	})
-	return array:for-each($mods,function($_){
-		let $src := util:binary-doc($params("raddled") || "/raddled/" || $_ || ".rdl")
-		let $parsed := raddle:parse($src)
-		return
-			if(array:size($parsed("args")) > 0) then
-				raddle:process($parsed,map:new(($params,map {"use" := $_})))
-			else
-				()
-	})
+    let $mods := $value("args")
+    let $map := doc($params("raddled") || "/map.xml")/root/module
+    let $main := distinct-values(array:for-each($mods,function($_){
+        tokenize($_,"/")[1]
+    }))
+    let $reqs := for-each($main,function($_){
+        let $uri := xs:anyURI($map[@rdl = $_]/@xq)
+        let $module := inspect:inspect-module-uri($uri)
+        return try {
+            util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
+        } catch * {
+            ()
+        }
+    })
+    return
+        map:new(
+            array:flatten(
+                array:for-each($mods,function($_){
+                    let $src := util:binary-to-string(util:binary-doc($params("raddled") || "/" || $_ || ".rdl"))
+                    let $parsed := raddle:parse($src)
+                    let $main := tokenize($_,"/")[1]
+                    let $prefix := $map[@rdl = $main]/@prefix
+                    return raddle:process($parsed,map:new(($params,map {"use" := $main})))
+                })
+            )
+        )
 };
 
 declare function raddle:process($value,$params){
-    if($value instance of array(item()?)) then
-        array:for-each($value,function($_) {
-            raddle:process($_,$params)
+    let $use := 
+        array:filter($value,function($arg){
+            $arg("name")="use"
         })
-	else if($value("name") = "use") then
-		raddle:use($value,$params)
-	else if($value("name") = "define") then
-		raddle:define($value,$params)
-	else if(not($value("name")) and map:contains($value,"args")) then
-		let $use := 
-			array:filter($value("args"),function($arg){
-				$arg("name")="use"
-			})
-		let $define := 
-			array:filter($value("args"),function($arg){
-				$arg("name")="define"
-			})
-		let $process := 
-			array:filter($value("args"),function($arg){
-				not($arg("name") = ("use","define"))
-			})
-		return
-			(
-				array:for-each($use,function($_) { raddle:use($_,$params) }),
-				array:for-each($define,function($_) { raddle:define($_,$params) }),
-				array:for-each($process,function($_) { raddle:process($_,$params) })
-			)
-				
-	else
-		raddle:compile(map {}, map:new(($value, map { "top" := true() })),(),())
+    let $define := 
+        array:filter($value,function($arg){
+            $arg("name")="define"
+        })
+    let $compile := 
+        array:filter($value,function($arg){
+            not($arg("name") = ("use","define"))
+        })
+    let $dict := 
+        map:new(($params("dict"),
+            for $i in 1 to array:size($use) return
+                raddle:use($use($i),$params)
+        ))
+    let $dict := 
+        map:new(($dict,
+            for $i in 1 to array:size($define)
+                let $def := raddle:define($define($i),$params)
+                return map:entry($def("qname"),$def)
+        ))
+    let $func := raddle:compile($compile,(),(),$params)
+    return map { "dict" := $dict, "func" := $func }
 };
 
 
-declare function raddle:compile($dict,$value,$parent,$pa){
+declare function raddle:compile($value,$parent,$pa,$params){
     let $arity :=
-        if($parent) then
-            array:size($parent("args"))
+        if(count($parent)) then
+            $parent("arity")
         else
             0
     let $a :=
@@ -411,14 +414,14 @@ declare function raddle:compile($dict,$value,$parent,$pa){
         let $acc := []
         let $arity := array:size($v("args"))
         let $name := $v("name")
-        let $aname := concat($name,"#",$arity)
-        let $def := $dict($aname)
-        let $acc := array:append($acc,$aname)
+        let $qname := concat($name,"#",$arity)
+        let $def := $params("dict")($qname)
+        let $acc := array:append($acc,$qname)
         let $args := array:for-each($v("args"),function($_){
             if($_ = (".","?")) then
                 $_
             else if($_ instance of array(item()?)) then
-                raddle:compile($dict,$_,(),$a)
+                raddle:compile($_,(),$a,$params)
             else
                 raddle:convert($_)
         })
@@ -429,16 +432,19 @@ declare function raddle:compile($dict,$value,$parent,$pa){
     let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
       let $f := $cur(1)
       let $args := $cur(2)
+      let $rpl := (string(array:head($args)) = ".")
       let $args :=
-          if(string(array:head($args)) = ".") then
-              array:insert-before(array:tail($args),1,$pre)
+          if($rpl) then
+              insert-before(array:flatten(array:tail($args)),1,$pre)
           else
-              $args
-      return
-          if(string(array:head($args)) = ".") then
-              "apply(" || $f || ",[" || string-join(array:flatten($args),",") || "])"
+              array:flatten($args)
+      return string-join($args,",")
+          (:
+          if($rpl) then
+              "apply(" || $f || ",[" || string-join($args,",") || "])"
           else
-              "(" || $pre || ", apply(" || $f || ",[" || string-join(array:flatten($args),",") || "]))"
+              "(" || $pre || ", apply(" || $f || ",[" || string-join($args,",") || "]))"
+              :)
     })
     let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
     let $func := "function(" || $fargs || "){ " || $fn || "}"
@@ -447,52 +453,54 @@ declare function raddle:compile($dict,$value,$parent,$pa){
     else
         $func || "(())"
     :)
-    return $func
+    return $f
 };
 
 
 declare function raddle:define($value,$params){
-	let $l := array:size($value("args"))
-	let $name := $value("args")(1)
-	let $parts := tokenize($name,":")
-	let $ns :=
-		if(count($parts)>1) then
-			$parts[1]
-		else
-			()
-	let $def :=
-		if($l=2) then
-			let $def := $params("dict")($name)
-			let $arity := array:size($def("args"))
-			return map:new(($def,map:entry("qname",$name || "#" || $arity)))
-		else
-			let $args := $value("args")(2)
-			let $arity := array:size($args)
-			let $type := $value("args")(3)
-			let $ns :=
-				if($ns) then
-					$ns
-				else if($l=3) then
-					"local"
-				else
-					tokenize($params("use"),"/")[1]
-			let $qname :=
-				if(contains($name,":")) then
-					$name
-				else
-					$ns || ":" || $name
-			let $qname := $qname || "#" || $arity
-			return
-				if(map:contains($params("dict"),$qname)) then
-					map:get($params("dict"),$qname)
-				else
-					map {
-						"name" := $name,
-						"qname" := $qname,
-						"ns" := $ns,
-						"type" := $type,
-						"args" := $args,
-						"body" := if($l=3) then () else $value("args")(4)
-					}
-	return $def
+    let $l := array:size($value("args"))
+    let $name := $value("args")(1)
+    let $def :=
+        if($l=2) then
+            let $def := $params("dict")($name)
+            let $arity := array:size($def("args"))
+            return map:new(($def,map:entry("qname",$name || "#" || $arity)))
+        else
+            let $args := $value("args")(2)
+            let $arity := array:size($args)
+            let $type := $value("args")(3)
+            let $parts := tokenize($name,":")
+            let $ns :=
+                if($l=3) then
+                    $params("use")
+                else if(count($parts)>1) then
+                    $parts[1]
+                else
+                    "local"
+            let $qname :=
+                if(contains($name,":")) then
+                    $name
+                else
+                    $ns || ":" || $name
+            let $qname := $qname || "#" || $arity
+            let $def :=
+                if(map:contains($params("dict"),$qname)) then
+                    map:get($params("dict"),$qname)
+                else
+                    map {
+                        "name" := $name,
+                        "qname" := $qname,
+                        "arity" := $arity,
+                        "ns" := $ns,
+                        "type" := $type,
+                        "args" := $args,
+                        "body" := if($l=3) then () else $value("args")(4)
+                    }
+            return
+                if($l=4 and not(map:contains($def,"func"))) then
+                     let $func := raddle:compile($def("body"),$def,(),$params)
+                     return map:new(($def,map { "func" := $func }))
+                else
+                    $def
+    return $def
 };
