@@ -337,12 +337,17 @@ declare function raddle:convert($string){
 
 declare function raddle:use($value,$params){
     let $mods := $value("args")
-    let $map := doc($params("raddled") || "/map.xml")/root/module
+    let $mappath :=
+    	if(map:contains($params,"modules")) then
+    		$params("modules")
+    	else
+    		"modules.xml"
+    let $map := doc($mappath)/root/module
     let $main := distinct-values(array:for-each($mods,function($_){
         tokenize($_,"/")[1]
     }))
     let $reqs := for-each($main,function($_){
-        let $uri := xs:anyURI($map[@rdl = $_]/@xq)
+        let $uri := xs:anyURI($map[@name = $_]/@uri)
         let $module := inspect:inspect-module-uri($uri)
         return try {
             util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
@@ -357,8 +362,8 @@ declare function raddle:use($value,$params){
                     let $src := util:binary-to-string(util:binary-doc($params("raddled") || "/" || $_ || ".rdl"))
                     let $parsed := raddle:parse($src)
                     let $main := tokenize($_,"/")[1]
-                    let $prefix := $map[@rdl = $main]/@prefix
-                    return raddle:process($parsed,map:new(($params,map {"use" := $main})))
+                    let $prefix := string($map[@name = $main]/@prefix)
+                    return raddle:process($parsed,map:new(($params,map {"use" := $prefix})))
                 })
             )
         )
@@ -455,7 +460,6 @@ declare function raddle:compile($value,$parent,$pa,$params){
     :)
     return $f
 };
-
 
 declare function raddle:define($value,$params){
     let $l := array:size($value("args"))
