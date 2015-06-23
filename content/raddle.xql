@@ -434,17 +434,15 @@ declare function raddle:compile($value,$parent,$pa,$params){
 		let $qname := concat($name,"#",$arity)
 		let $def := $params("dict")($qname)
 		let $acc := array:append($acc,$qname)
-		let $args := array{
-			for $i in 1 to array:size($v("args")) return
-			let $_ := $v("args")($i)
-			return
+		let $args := 
+			array:for-each($v("args"),function($_){
 				if($_ = (".","?")) then
 					$_
 				else if($_ instance of array(item()?)) then
 					raddle:compile($_,(),$a,$params)
 				else
 					raddle:convert($_)
-		}
+			})
 		return array:append($acc,$args)
 	})
 	(: TODO get exec :)
