@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<meta xmlns="http://exist-db.org/xquery/repo">
+    <author>Wouter Hager</author>
+    <website>https://github.com/wshager/raddle.xq</website>
+    <license>BSD / AFLv2.1</license>
+    <copyright>true</copyright>
+    <description>An XQuery module for URL-based querying</description>
+    <type>library</type>
+    <status>develop</status>
+    <deployed>2013-08-26T16:44:50.804+02:00</deployed>
+</meta>
