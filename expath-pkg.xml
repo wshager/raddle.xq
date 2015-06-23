@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://expath.org/ns/pkg" name="http://lagua.nl/pkg/raddle" abbrev="raddle" version="0.1" spec="1.0">
+    <title>Raddle: URL-based querying</title>
+    <xquery>
+        <namespace>http://lagua.nl/lib/raddle</namespace>
+        <file>raddle.xql</file>
+    </xquery>
+</package>
