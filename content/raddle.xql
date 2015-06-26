@@ -87,21 +87,21 @@ declare function raddle:parse($query as xs:string?, $parameters as xs:anyAtomicT
 		[]
 };
 
-declare function local:no-conjunction($seq,$hasopen) {
+declare function raddle:no-conjunction($seq,$hasopen) {
 	if($seq[1]/text() eq ")") then
 		if($hasopen) then
-			local:no-conjunction(subsequence($seq,2,count($seq)),false())
+			raddle:no-conjunction(subsequence($seq,2,count($seq)),false())
 		else
 			$seq[1]
 	else if($seq[1]/text() = ("&amp;", "|")) then
 		false()
 	else if($seq[1]/text() eq "(") then
-		local:no-conjunction(subsequence($seq,2,count($seq)),true())
+		raddle:no-conjunction(subsequence($seq,2,count($seq)),true())
 	else
 		false()
 };
 
-declare function local:set-conjunction($query as xs:string) {
+declare function raddle:set-conjunction($query as xs:string) {
 	let $parts := analyze-string($query,"(\()|(&amp;)|(\|)|(\))")/*
 	let $groups := 
 		for $i in 1 to count($parts) return
@@ -140,7 +140,7 @@ declare function local:set-conjunction($query as xs:string) {
 			let $p := $groups[$n]
 			return
 				if($p/@i and $p/text() eq "(") then
-					let $close := local:no-conjunction(subsequence($groups,$n+1,$cnt)[@i],false())
+					let $close := raddle:no-conjunction(subsequence($groups,$n+1,$cnt)[@i],false())
 					return 
 						if($close) then
 							(string($p/@i),string($close/@i))
@@ -311,7 +311,7 @@ declare function raddle:normalize-query($query as xs:string?, $parameters as xs:
 						substring($operator, 2, string-length($operator) - 2)
 				return concat($operator, "(" , $property , "," , $value , ")")
 	let $query := string-join($analysis,"")
-	return local:set-conjunction($query)
+	return raddle:set-conjunction($query)
 };
 
 declare variable $raddle:auto-converted := map {
@@ -347,8 +347,13 @@ declare function raddle:use($value,$params){
 		tokenize($_,"/")[1]
 	}))
 	let $reqs := for-each($main,function($_){
+		let $location := xs:anyURI($map[@name = $_]/@location)
 		let $uri := xs:anyURI($map[@name = $_]/@uri)
-		let $module := inspect:inspect-module-uri($uri)
+		let $module := 
+			if($location) then
+				inspect:inspect-module($location)
+			else
+				inspect:inspect-module-uri($uri)
 		return try {
 			util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
 		} catch * {
@@ -400,8 +405,8 @@ declare function raddle:process($value,$params){
 declare function raddle:eval($dict,$params){
 	let $str :=
 		for $key in map:keys($dict) return
-			if(matches($key,"^local:")) then
-				"declare function local:" || $dict($key)("name") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
+			if(matches($key,"^raddle:")) then
+				"declare function raddle:" || $dict($key)("name") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
 			else if(matches($key,"^anon:")) then
 				$dict($key)("func")
 			else
@@ -409,7 +414,55 @@ declare function raddle:eval($dict,$params){
 	return util:eval("xquery version &quot;3.1&quot;;" || string-join($str,"&#13;"))
 };
 
+declare function raddle:update-array($arr,$i,$val){
+	let $arr := array:remove($arr,$i)
+	return array:insert-before($arr,$i,$val)
+};
 
+declare function raddle:index-of($arr,$v){
+	index-of(array:for-each($arr, function($_){
+		if($_ = $v) then
+			1
+		else
+			0
+	}),1)
+};
+
+declare function raddle:inc-replace($arr,$acc){
+	if(array:size($arr)>0) then
+		let $i := $acc(1)
+		let $a := $acc(2)
+		let $v := array:head($arr)
+		let $inc := 
+			if($v = "?") then
+					1
+				else
+					0
+		let $v :=
+			if($inc = 1) then
+				"$arg" || $i
+			else
+				$v
+		let $a := array:append($a,$v)
+		return
+				raddle:inc-replace(array:tail($arr),[$i+$inc,$a])
+	else
+		$acc
+};
+
+declare function raddle:seq-inc-replace($arr,$acc) {
+	if(array:size($arr)>0) then
+		let $i := $acc(1)
+		let $a := $acc(2)
+		let $v := array:head($arr)
+		let $nacc := raddle:inc-replace($v(2),[$i,[]])
+		let $ni := $nacc(1)
+		let $na := array:append($a,$nacc(2))
+		return
+			raddle:seq-inc-replace(array:remove($arr,1),[$ni,$na])
+	else
+		$acc
+};
 declare function raddle:compile($value,$parent,$pa,$params){
 	let $arity :=
 		if(count($parent)) then
@@ -417,22 +470,20 @@ declare function raddle:compile($value,$parent,$pa,$params){
 		else
 			0
 	let $a :=
-		for $i in 1 to $arity return "$arg" || $i
-	let $fa := subsequence($a,2)
-	let $fargs := string-join($fa,",")
+		for $i in 1 to $arity - 1 return "$arg" || $i
+	let $fa := subsequence($a,1)
 	(: always compose :)
 	let $value :=
 		if($value instance of array(item()?)) then
-				$value
-			else
-				array { $value }
+			   $value
+		   else
+			   array { $value }
 	(: compose the functions in the value array :)
 	let $f := array:for-each($value,function($v){
 		let $acc := []
 		let $arity := array:size($v("args"))
 		let $name := $v("name")
 		let $qname := concat($name,"#",$arity)
-		let $def := $params("dict")($qname)
 		let $acc := array:append($acc,$qname)
 		let $args := 
 			array:for-each($v("args"),function($_){
@@ -443,11 +494,13 @@ declare function raddle:compile($value,$parent,$pa,$params){
 				else
 					raddle:convert($_)
 			})
+		(: return map:new(($v,map:entry("args",$args))):)
 		return array:append($acc,$args)
 	})
+	let $f:= raddle:seq-inc-replace($f,[1,[]])(2)
 	(: TODO get exec :)
 	let $exec := ()
-	let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
+	(:let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
 		let $f := $cur(1)
 		let $args := $cur(2)
 		let $rpl := (string(array:head($args)) = ".")
@@ -457,19 +510,20 @@ declare function raddle:compile($value,$parent,$pa,$params){
 			else
 				array:flatten($args)
 		return
-			if($rpl) then
-				"apply(" || $f || ",[" || string-join($args,",") || "])"
-			else
-				"(" || $pre || ", apply(" || $f || ",[" || string-join($args,",") || "]))"
+		  if($rpl) then
+			  "apply(" || $f || ",[" || string-join($args,",") || "])"
+		  else
+			  "(" || $pre || ", apply(" || $f || ",[" || string-join($args,",") || "]))"
 	})
 	let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
 	let $func := "function(" || $fargs || "){ " || $fn || "}"
+	:)
 	(:if(!$exec or $top) then
 		$func
 	else
 		$func || "(())"
 	:)
-	return $func
+	return $f
 };
 
 declare function raddle:define($value,$params){
