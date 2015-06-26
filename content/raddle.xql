@@ -402,16 +402,21 @@ declare function raddle:process($value,$params){
 	return map:new(($dict, map { "anon:top#1" := map { "name":="top","qname":="anon:top#1","body":=$compile,"func":=$func }}))
 };
 
-declare function raddle:eval($dict,$params){
+declare function raddle:module($dict,$params){
 	let $str :=
 		for $key in map:keys($dict) return
-			if(matches($key,"^raddle:")) then
-				"declare function raddle:" || $dict($key)("name") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
+			if(matches($key,"^local:")) then
+				"declare function local:" || $dict($key)("name") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
 			else if(matches($key,"^anon:")) then
 				$dict($key)("func")
 			else
 				 ()
-	return util:eval("xquery version &quot;3.1&quot;;" || string-join($str,"&#13;"))
+	return "xquery version &quot;3.1&quot;;" || string-join($str,"&#13;")
+};
+
+declare function raddle:eval($dict,$params){
+	let $str := raddle:module($dict,$params)
+	return util:eval($str)
 };
 
 declare function raddle:update-array($arr,$i,$val){
@@ -457,9 +462,9 @@ declare function raddle:seq-inc-replace($arr,$acc) {
 		let $v := array:head($arr)
 		let $nacc := raddle:inc-replace($v(2),[$i,[]])
 		let $ni := $nacc(1)
-		let $na := array:append($a,$nacc(2))
+		let $na := array:append($a,[$v(1),$nacc(2)])
 		return
-			raddle:seq-inc-replace(array:remove($arr,1),[$ni,$na])
+			raddle:seq-inc-replace(array:tail($arr),[$ni,$na])
 	else
 		$acc
 };
@@ -500,7 +505,7 @@ declare function raddle:compile($value,$parent,$pa,$params){
 	let $f:= raddle:seq-inc-replace($f,[1,[]])(2)
 	(: TODO get exec :)
 	let $exec := ()
-	(:let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
+	let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
 		let $f := $cur(1)
 		let $args := $cur(2)
 		let $rpl := (string(array:head($args)) = ".")
@@ -517,13 +522,12 @@ declare function raddle:compile($value,$parent,$pa,$params){
 	})
 	let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
 	let $func := "function(" || $fargs || "){ " || $fn || "}"
-	:)
 	(:if(!$exec or $top) then
 		$func
 	else
 		$func || "(())"
 	:)
-	return $f
+	return $func
 };
 
 declare function raddle:define($value,$params){
