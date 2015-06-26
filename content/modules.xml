@@ -1,3 +1,6 @@
 <root>
     <module name="core" prefix="" uri="http://www.w3.org/2005/xpath-functions"/>
+    <module name="op" prefix="op" uri="http://www.w3.org/2005/xpath-functions/op" location="/db/apps/raddle-tests/lib/op.xql"/>
+    <module name="map" prefix="map" uri="http://www.w3.org/2005/xpath-functions/map"/>
+    <module name="array" prefix="array" uri="http://www.w3.org/2005/xpath-functions/array"/>
 </root>
