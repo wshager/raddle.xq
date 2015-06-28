@@ -324,7 +324,9 @@ declare variable $raddle:auto-converted := map {
 };
 
 declare function raddle:convert($string){
-	if(map:contains($raddle:auto-converted,$string)) then
+	if(contains($string,"#")) then
+		$string
+	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
 	else
 		let $number := number($string)
@@ -439,7 +441,7 @@ declare function raddle:inc-replace($arr,$acc){
 		let $a := $acc(2)
 		let $v := array:head($arr)
 		let $inc := 
-			if($v = "?") then
+			if(string($v) = "?") then
 					1
 				else
 					0
@@ -450,7 +452,7 @@ declare function raddle:inc-replace($arr,$acc){
 				$v
 		let $a := array:append($a,$v)
 		return
-				raddle:inc-replace(array:tail($arr),[$i+$inc,$a])
+			raddle:inc-replace(array:tail($arr),[$i+$inc,$a])
 	else
 		$acc
 };
@@ -492,10 +494,15 @@ declare function raddle:compile($value,$parent,$pa,$params){
 		let $acc := array:append($acc,$qname)
 		let $args := 
 			array:for-each($v("args"),function($_){
-				if($_ = (".","?")) then
-					$_
-				else if($_ instance of array(item()?)) then
+				if($_ instance of array(item()?)) then
+					if(array:size($_) > 0) then
+						raddle:compile($_,(),$a,$params)
+					else
+						"()"
+				else if($_ instance of map(xs:string, item()?)) then
 					raddle:compile($_,(),$a,$params)
+				else if(string($_) = (".","?")) then
+					$_
 				else
 					raddle:convert($_)
 			})
@@ -503,30 +510,45 @@ declare function raddle:compile($value,$parent,$pa,$params){
 		return array:append($acc,$args)
 	})
 	let $f:= raddle:seq-inc-replace($f,[1,[]])(2)
-	(: TODO get exec :)
-	let $exec := ()
+	let $exec := array:fold-left($f,false(),function($pre,$cur){
+		let $args := $cur(2)
+		let $v := 
+			if(array:size($args)>0) then
+				array:head($args)
+			else
+				()
+		return not($v = ".")
+	})
 	let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
 		let $f := $cur(1)
 		let $args := $cur(2)
-		let $rpl := (string(array:head($args)) = ".")
+		let $v := 
+			if(array:size($args)>0) then
+				array:head($args)
+			else
+				()
+		let $rpl := ($v = ".")
 		let $args :=
-			if($rpl) then
+			if(empty($v)) then
+				()
+			else if($rpl) then
 				insert-before(array:flatten(array:tail($args)),1,$pre)
 			else
 				array:flatten($args)
 		return
-		  if($rpl) then
+		  if($rpl or empty($args)) then
 			  "apply(" || $f || ",[" || string-join($args,",") || "])"
 		  else
 			  "(" || $pre || ", apply(" || $f || ",[" || string-join($args,",") || "]))"
 	})
 	let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
 	let $func := "function(" || $fargs || "){ " || $fn || "}"
-	(:if(!$exec or $top) then
-		$func
-	else
-		$func || "(())"
-	:)
+	let $top := false()
+	let $func := 
+		if(not($exec) or $top) then
+			$func
+		else
+			$func || "(())"
 	return $func
 };
 
