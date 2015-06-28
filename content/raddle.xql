@@ -400,7 +400,7 @@ declare function raddle:process($value,$params){
 				let $def := raddle:define($define($i),$params)
 				return map:entry($def("qname"),$def)
 		))
-	let $func := raddle:compile($compile,(),(),$params)
+	let $func := raddle:compile($compile,(),(),map:new(($params,map { "top" := true() })))
 	return map:new(($dict, map { "anon:top#1" := map { "name":="top","qname":="anon:top#1","body":=$compile,"func":=$func }}))
 };
 
@@ -485,6 +485,8 @@ declare function raddle:compile($value,$parent,$pa,$params){
 			   $value
 		   else
 			   array { $value }
+	let $top := $params("top")
+	let $params := map:remove($params,"top")
 	(: compose the functions in the value array :)
 	let $f := array:for-each($value,function($v){
 		let $acc := []
@@ -543,7 +545,6 @@ declare function raddle:compile($value,$parent,$pa,$params){
 	})
 	let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
 	let $func := "function(" || $fargs || "){ " || $fn || "}"
-	let $top := false()
 	let $func := 
 		if(not($exec) or $top) then
 			$func
