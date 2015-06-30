@@ -1,10 +1,10 @@
 xquery version "3.1";
 
 declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
-import module namespace raddle="http://lagua.nl/lib/raddle" at "lib/raddle.xql";
+import module namespace raddle="http://lagua.nl/lib/raddle" at "../content/raddle.xql";
 
-let $value := raddle:parse("use(core/aggregate-functions,core/string-regex-functions),define(depth,(string),number,(tokenize(.,/),count(.))),local:depth(.)")
-let $params := map { "raddled" := "/db/apps/raddle-tests/raddled", "dict" := map {} }
+let $value := raddle:parse("use(op/numeric-arithmetic-operators,op/numeric-comparison-operators,hof/unfold-functions),hof:unfold(.,(op:add(.,1)),(op:greater-than(.,10)),new:array())")
+let $params := map { "raddled" := "/db/apps/raddled", "dict" := map {} }
 let $dict := raddle:process($value,$params)
 return serialize($dict,
 <output:serialization-parameters>
