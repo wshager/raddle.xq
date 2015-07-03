@@ -482,9 +482,9 @@ declare function raddle:compile($value,$parent,$pa,$params){
 	(: always compose :)
 	let $value :=
 		if($value instance of array(item()?)) then
-			   $value
-		   else
-			   array { $value }
+			$value
+		else
+			array { $value }
 	let $top := $params("top")
 	let $params := map:remove($params,"top")
 	(: compose the functions in the value array :)
@@ -549,7 +549,7 @@ declare function raddle:compile($value,$parent,$pa,$params){
 		if(not($exec) or $top) then
 			$func
 		else
-			$func || "(())"
+			$func || "($arg0)"
 	return $func
 };
 
