@@ -337,6 +337,11 @@ declare function raddle:convert($string){
 				$number
 };
 
+declare variable $raddle:type-map := map {
+    "any" := "xs:anyAtomicType",
+    "element" := "element()"
+};
+
 declare function raddle:use($value,$params){
 	let $mods := $value("args")
 	let $mappath :=
@@ -435,122 +440,76 @@ declare function raddle:index-of($arr,$v){
 	}),1)
 };
 
-declare function raddle:inc-replace($arr,$acc){
-	if(array:size($arr)>0) then
-		let $i := $acc(1)
-		let $a := $acc(2)
-		let $v := array:head($arr)
-		let $inc := 
-			if(string($v) = "?") then
-					1
-				else
-					0
-		let $v :=
-			if($inc = 1) then
-				"$arg" || $i
-			else
-				$v
-		let $a := array:append($a,$v)
-		return
-			raddle:inc-replace(array:tail($arr),[$i+$inc,$a])
-	else
-		$acc
-};
-
-declare function raddle:seq-inc-replace($arr,$acc) {
-	if(array:size($arr)>0) then
-		let $i := $acc(1)
-		let $a := $acc(2)
-		let $v := array:head($arr)
-		let $nacc := raddle:inc-replace($v(2),[$i,[]])
-		let $ni := $nacc(1)
-		let $na := array:append($a,[$v(1),$nacc(2)])
-		return
-			raddle:seq-inc-replace(array:tail($arr),[$ni,$na])
-	else
-		$acc
-};
-declare function raddle:compile($value,$parent,$pa,$params){
-	let $arity :=
-		if(count($parent)) then
-			$parent("arity")
-		else
-			0
-	let $a :=
-		for $i in 1 to $arity - 1 return "$arg" || $i
-	let $fa := subsequence($a,1)
-	(: always compose :)
-	let $value :=
-		if($value instance of array(item()?)) then
-			$value
-		else
-			array { $value }
-	let $top := $params("top")
-	let $params := map:remove($params,"top")
-	(: compose the functions in the value array :)
-	let $f := array:for-each($value,function($v){
-		let $acc := []
-		let $arity := array:size($v("args"))
-		let $name := $v("name")
-		let $qname := concat($name,"#",$arity)
-		let $acc := array:append($acc,$qname)
-		let $args := 
-			array:for-each($v("args"),function($_){
-				if($_ instance of array(item()?)) then
-					if(array:size($_) > 0) then
-						raddle:compile($_,(),$a,$params)
-					else
-						"()"
-				else if($_ instance of map(xs:string, item()?)) then
-					raddle:compile($_,(),$a,$params)
-				else if(string($_) = (".","?")) then
-					$_
-				else
-					raddle:convert($_)
-			})
-		(: return map:new(($v,map:entry("args",$args))):)
-		return array:append($acc,$args)
-	})
-	let $f:= raddle:seq-inc-replace($f,[1,[]])(2)
-	let $exec := array:fold-left($f,false(),function($pre,$cur){
-		let $args := $cur(2)
-		let $v := 
-			if(array:size($args)>0) then
-				array:head($args)
-			else
-				()
-		return not($v = ".")
-	})
-	let $fn := array:fold-left($f,"$arg0",function($pre,$cur){
-		let $f := $cur(1)
-		let $args := $cur(2)
-		let $v := 
-			if(array:size($args)>0) then
-				array:head($args)
-			else
-				()
-		let $rpl := ($v = ".")
-		let $args :=
-			if(empty($v)) then
-				()
-			else if($rpl) then
-				insert-before(array:flatten(array:tail($args)),1,$pre)
-			else
-				array:flatten($args)
+declare function raddle:compose($seq,$params){
+	let $fn := array:fold-left($seq,"",function($pre,$cur){
+		let $f := raddle:compile($cur,(),true(),$params)
 		return
 		  if($rpl or empty($args)) then
-			  "apply(" || $f || ",[" || string-join($args,",") || "])"
+			  $f
 		  else
-			  "(" || $pre || ", apply(" || $f || ",[" || string-join($args,",") || "]))"
+			  "(" || $pre || ", " || $f || ")"
 	})
-	let $fargs := string-join(insert-before($fa,1,"$arg0"),",")
-	let $func := "function(" || $fargs || "){ " || $fn || "}"
-	let $func := 
-		if(not($exec) or $top) then
-			$func
-		else
-			$func || "($arg0)"
+	let $func := "function(){ " || $fn || "}"
 	return $func
+};
+
+declare function raddle:compile($value,$parent,$compose,$params){
+	let $top := $params("top")
+	let $params := map:remove($params,"top")
+    return
+	    if($value instance of array(item()?)) then
+(:	        raddle:compose($value,$params):) ()
+	    else
+        	let $arity := array:size($value("args"))
+        	let $name := $value("name")
+        	let $qname := concat($name,"#",$arity)
+        	let $args := $value("args")
+        	let $args := 
+    			array:for-each($args,function($_){
+    				if($_ instance of array(item()?)) then
+    					raddle:compile($_,(),(),$params)
+    				else if($_ instance of map(xs:string, item()?)) then
+    					raddle:compile($_,(),(),$params)
+    				else if(matches(string($_),"^(\./)|\.$")) then
+    				    $_
+    				else if(matches(string($_),"^\$[0-9]+$")) then
+    					replace($_,"^\$([0-9]+)$","\$arg$1")
+    				else
+    					raddle:convert($_)
+    			})
+            let $args2 :=
+                array:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur){
+                    if(matches($cur,"^(\./)|\.$")) then
+                        array:append($pre,$cur)
+                    else
+                        let $s := array:size($pre)
+                        let $last := $pre($s)
+                        return
+                            if(matches($last,"^(\./)|\.$")) then
+                                array:append($pre,$cur)
+                            else
+                                array:append(array:remove($pre,$s),$last || "," || $cur)
+                })
+            let $cnt := array:size($args2)
+	        let $args2 := array:append($args2,"])")
+	        let $args2 := array:flatten($args2)
+        	return
+        	    if(exists($parent)) then
+                    let $a :=
+            		    for $i in 1 to array:size($parent("args"))
+                		    let $type := $parent("args")($i)
+                		    let $xsd := 
+                		        if(map:contains($raddle:type-map,$type)) then
+                    		        map:get($raddle:type-map,$type)
+                    		    else
+                    		        $type
+                		    return "$arg" || $i || " as " || $xsd
+                    return "function(" || string-join($a,",") || "){ " || string-join($args2,"") || "}"
+        	    else
+        	        if($cnt>3) then
+        	            $args2
+        	       else
+        	           string-join($args2,"")
 };
 
 declare function raddle:define($value,$params){
