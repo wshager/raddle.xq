@@ -458,7 +458,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
     		        if(map:contains($raddle:type-map,$type)) then
         		        map:get($raddle:type-map,$type)
         		    else
-        		        $type
+        		        "xs:" || $type
     		    return "$arg" || $i || " as " || $xsd
 		    ),",")
 		else
@@ -478,7 +478,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				else
 					$_
 			})
-			return "function " || $fname || "(" || $fargs || "){" || string-join(array:flatten($seq),"") || " return $arg0}"
+			return "function(" || $fargs || "){" || string-join(array:flatten($seq),"") || " return $arg0}"
 	    else
         	let $arity := array:size($value("args"))
         	let $name := $value("name")
@@ -500,7 +500,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
             let $args2 :=
                 local:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur){
                     if(matches($cur,"^(\./)|\.$")) then
-                        array:append($pre,$cur)
+                        array:append($pre,"$arg0")
                     else
                         let $s := array:size($pre)
                         let $last := $pre($s)
