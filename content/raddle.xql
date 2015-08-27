@@ -19,6 +19,12 @@ declare variable $raddle:operatorMap := map {
 	"!=" := "ne"
 };
 
+declare function local:fold-left($array as array(*), $acc, $fn as function(*)) {
+    if(array:size($array) = 0) then
+        $acc
+    else
+        local:fold-left(array:tail($array), $fn($acc,array:head($array)), $fn)
+};
 
 declare function raddle:parse($query as xs:string) {
 	raddle:parse($query, ())
@@ -440,25 +446,39 @@ declare function raddle:index-of($arr,$v){
 	}),1)
 };
 
-declare function raddle:compose($seq,$params){
-	let $fn := array:fold-left($seq,"",function($pre,$cur){
-		let $f := raddle:compile($cur,(),true(),$params)
-		return
-		  if($rpl or empty($args)) then
-			  $f
-		  else
-			  "(" || $pre || ", " || $f || ")"
-	})
-	let $func := "function(){ " || $fn || "}"
-	return $func
-};
-
 declare function raddle:compile($value,$parent,$compose,$params){
 	let $top := $params("top")
 	let $params := map:remove($params,"top")
+	let $isSeq := $value instance of array(item()?)
+	let $fargs :=
+	    if(exists($parent)) then
+	        string-join((for $i in 1 to array:size($parent("args")) return
+    			let $type := $parent("args")($i)
+    		    let $xsd := 
+    		        if(map:contains($raddle:type-map,$type)) then
+        		        map:get($raddle:type-map,$type)
+        		    else
+        		        $type
+    		    return "$arg" || $i || " as " || $xsd
+		    ),",")
+		else
+		    "$arg0"
+	let $fname :=
+	    if(exists($parent)) then
+(:    		let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
+    		 $parent("qname") 
+    	else
+    	    "anon"
     return
-	    if($value instance of array(item()?)) then
-(:	        raddle:compose($value,$params):) ()
+	    if($isSeq) then
+            let $seq := array:for-each($value,function($_){
+				if($_ instance of map(xs:string, item()?)) then
+					(: compose the functions in the array :)
+					"let $arg0 := " || raddle:compile($_,(),true(),$params)
+				else
+					$_
+			})
+			return "function " || $fname || "(" || $fargs || "){" || string-join(array:flatten($seq),"") || " return $arg0}"
 	    else
         	let $arity := array:size($value("args"))
         	let $name := $value("name")
@@ -478,14 +498,14 @@ declare function raddle:compile($value,$parent,$compose,$params){
     					raddle:convert($_)
     			})
             let $args2 :=
-                array:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur){
+                local:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur){
                     if(matches($cur,"^(\./)|\.$")) then
                         array:append($pre,$cur)
                     else
                         let $s := array:size($pre)
                         let $last := $pre($s)
                         return
-                            if(matches($last,"^(\./)|\.$")) then
+                            if(matches($last,"^(\./)|\.$") or $s<2) then
                                 array:append($pre,$cur)
                             else
                                 array:append(array:remove($pre,$s),$last || "," || $cur)
@@ -493,23 +513,12 @@ declare function raddle:compile($value,$parent,$compose,$params){
             let $cnt := array:size($args2)
 	        let $args2 := array:append($args2,"])")
 	        let $args2 := array:flatten($args2)
+        	let $fn := string-join($args2,"")
         	return
-        	    if(exists($parent)) then
-                    let $a :=
-            		    for $i in 1 to array:size($parent("args"))
-                		    let $type := $parent("args")($i)
-                		    let $xsd := 
-                		        if(map:contains($raddle:type-map,$type)) then
-                    		        map:get($raddle:type-map,$type)
-                    		    else
-                    		        $type
-                		    return "$arg" || $i || " as " || $xsd
-                    return "function(" || string-join($a,",") || "){ " || string-join($args2,"") || "}"
+        	    if($compose) then
+                    $fn
         	    else
-        	        if($cnt>3) then
-        	            $args2
-        	       else
-        	           string-join($args2,"")
+        	       "function(" || $fargs || "){ " || $fn || "}"
 };
 
 declare function raddle:define($value,$params){
