@@ -446,10 +446,54 @@ declare function raddle:index-of($arr,$v){
 	}),1)
 };
 
+declare function raddle:get-seq-type($value) {
+	let $type := distinct-values(
+		for $_ in $value return
+			if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
+				1
+			else if(contains($_,":")) then
+				2
+			else
+				3
+	)
+	return
+		if(count($type)>1) then
+			error(xs:QName("raddle:sequenceTypeError"), "Mixing sequence types is not allowed" || $type)
+		else
+			$type
+};
+
 declare function raddle:compile($value,$parent,$compose,$params){
 	let $top := $params("top")
 	let $params := map:remove($params,"top")
 	let $isSeq := $value instance of array(item()?)
+	let $seqType :=
+		if($isSeq) then
+			raddle:get-seq-type($value)
+		else
+			0
+	let $ret :=
+		if($isSeq) then
+			if($seqType = 1) then
+				array:for-each($value,function($_){
+					if($_ instance of map(xs:string, item()?)) then
+						(: compose the functions in the array :)
+						"let $arg0 := " || raddle:compile($_,(),true(),$params)
+					else
+						$_
+				})
+			else
+				if($seqType = 2) then
+					array:for-each($value,function($_){
+						let $p := tokenize($_,":")
+						return map:entry($p(0),raddle:convert($p(1)))
+					})
+				else
+					array:for-each($value,function($_){
+						raddle:convert($_)
+					})
+		else
+			()
 	let $fargs :=
 		if(exists($parent)) then
 			string-join((for $i in 1 to array:size($parent("args")) return
@@ -466,19 +510,19 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $fname :=
 		if(exists($parent)) then
 (:		  let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
-			 $parent("qname") 
+			 $parent("qname")
 		else
 			"anon"
 	return
 		if($isSeq) then
-			let $seq := array:for-each($value,function($_){
-				if($_ instance of map(xs:string, item()?)) then
-					(: compose the functions in the array :)
-					"let $arg0 := " || raddle:compile($_,(),true(),$params)
+			if($seqType = 1) then
+				"function(" || $fargs || "){" || string-join(array:flatten($ret),"&#13;") || " return $arg0}"
+			else
+				(: stringify :)
+				if($seqType = 2) then
+					map:new($ret)
 				else
-					$_
-			})
-			return "function(" || $fargs || "){" || string-join(array:flatten($seq),"&#13;") || " return $arg0}"
+					()
 		else
 			let $arity := array:size($value("args"))
 			let $name := $value("name")
