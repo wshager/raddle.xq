@@ -20,10 +20,16 @@ declare variable $raddle:operatorMap := map {
 };
 
 declare function local:fold-left($array as array(*), $acc, $fn as function(*)) {
-	if(array:size($array) = 0) then
-		$acc
-	else
-		local:fold-left(array:tail($array), $fn($acc,array:head($array)), $fn)
+	local:fold-left($array, $acc, $fn, array:size($array))
+};
+
+declare function local:fold-left($array as array(*), $acc, $fn as function(*), $total as xs:integer) {
+	let $i := array:size($array)
+	return
+		if($i = 0) then
+			$acc
+		else
+			local:fold-left(array:tail($array), $fn($acc,array:head($array),$total - $i), $fn, $total)
 };
 
 declare function raddle:parse($query as xs:string) {
@@ -475,12 +481,28 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $ret :=
 		if($isSeq) then
 			if($seqType = 1) then
-				array:for-each($value,function($_){
-					if($_ instance of map(xs:string, item()?)) then
+				local:fold-left($value,"",function($pre,$cur,$i){
+					if($cur instance of map(xs:string, item()?)) then
 						(: compose the functions in the array :)
-						"let $arg0 := " || raddle:compile($_,(),true(),$params)
+						let $c := raddle:compile($cur,(),true(),$params)
+						let $p :=
+							if(array:size($c)>1) then
+								tokenize($c(2),",")
+							else
+								()
+						 let $p :=
+							if(exists($parent) and count($p)>0 and $p[1] = "$arg0") then
+								remove($p,1)
+							else
+								$p
+						 let $t :=
+							if(count($p) > 0 and $i > 0) then
+								","
+							else
+								""
+						 return $c(1) || $pre || $t || string-join($p,",") || "])"
 					else
-						$_
+						""
 				})
 			else
 				if($seqType = 2) then
@@ -516,7 +538,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	return
 		if($isSeq) then
 			if($seqType = 1) then
-				"function(" || $fargs || "){" || string-join(array:flatten($ret),"&#13;") || " return $arg0}"
+				"function(" || $fargs || "){" || $ret || "}"
 			else
 				(: stringify :)
 				if($seqType = 2) then
@@ -542,7 +564,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						raddle:convert($_)
 				})
 			let $args2 :=
-				local:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur){
+				local:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur,$i){
 					if(matches($cur,"^(\./)|\.$")) then
 						array:append($pre,"$arg0")
 					else
@@ -554,15 +576,14 @@ declare function raddle:compile($value,$parent,$compose,$params){
 							else
 								array:append(array:remove($pre,$s),$last || "," || $cur)
 				})
-			let $cnt := array:size($args2)
-			let $args2 := array:append($args2,"])")
-			let $args2 := array:flatten($args2)
-			let $fn := string-join($args2,"")
 			return
 				if($compose) then
-					$fn
+					$args2
 				else
-					"function(" || $fargs || "){ " || $fn || "}"
+					let $args2 := array:append($args2,"])")
+					let $args2 := array:flatten($args2)
+					let $fn := string-join($args2,"")
+					return "function(" || $fargs || "){ " || $fn || "}"
 };
 
 declare function raddle:define($value,$params){
