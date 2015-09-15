@@ -1,6 +1,9 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
+
+declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
+
 import module namespace json="http://www.json.org";
 
 
@@ -453,20 +456,24 @@ declare function raddle:index-of($arr,$v){
 };
 
 declare function raddle:get-seq-type($value) {
-	let $type := distinct-values(
-		for $_ in $value return
-			if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
-				1
-			else if(contains($_,":")) then
-				2
+	if(array:size($value) eq 0) then
+		3
+	else
+		let $type := distinct-values(array:flatten(
+			array:for-each($value,function($_){
+				if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
+					1
+				else if(contains($_,":")) then
+					2
+				else
+					3
+			})
+		))
+		return
+			if(count($type)>1) then
+				error(xs:QName("raddle:sequenceTypeError"), "Mixing sequence types is not allowed" || $type)
 			else
-				3
-	)
-	return
-		if(count($type)>1) then
-			error(xs:QName("raddle:sequenceTypeError"), "Mixing sequence types is not allowed" || $type)
-		else
-			$type
+				$type
 };
 
 declare function raddle:compile($value,$parent,$compose,$params){
@@ -506,9 +513,9 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				})
 			else
 				if($seqType = 2) then
-					array:for-each($value,function($_){
-						let $p := tokenize($_,":")
-						return map:entry($p(0),raddle:convert($p(1)))
+					array:fold-left($value,map {},function($pre,$cur){
+						let $p := tokenize($cur,":")
+						return map:new(($pre,map:entry($p[1],raddle:convert($p[2]))))
 					})
 				else
 					array:for-each($value,function($_){
@@ -520,11 +527,12 @@ declare function raddle:compile($value,$parent,$compose,$params){
 		if(exists($parent)) then
 			string-join((for $i in 1 to array:size($parent("args")) return
 				let $type := $parent("args")($i)
+				let $stype := replace($type,"\*|\+","")
 				let $xsd := 
-					if(map:contains($raddle:type-map,$type)) then
-						map:get($raddle:type-map,$type)
+					if(map:contains($raddle:type-map,$stype)) then
+						replace($type,$stype,map:get($raddle:type-map,$stype))
 					else
-						"xs:" || $type
+						"xs:" || $stype
 				return "$arg" || $i || " as " || $xsd
 			),",")
 		else
@@ -542,9 +550,15 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			else
 				(: stringify :)
 				if($seqType = 2) then
-					map:new($ret)
+					"map " || serialize($ret,
+					<output:serialization-parameters>
+						<output:method>json</output:method>
+					</output:serialization-parameters>)
 				else
-					()
+					serialize($ret,
+					<output:serialization-parameters>
+						<output:method>json</output:method>
+					</output:serialization-parameters>)
 		else
 			let $arity := array:size($value("args"))
 			let $name := $value("name")
@@ -583,7 +597,11 @@ declare function raddle:compile($value,$parent,$compose,$params){
 					let $args2 := array:append($args2,"])")
 					let $args2 := array:flatten($args2)
 					let $fn := string-join($args2,"")
-					return "function(" || $fargs || "){ " || $fn || "}"
+					return 
+						if(exists($parent) or $top) then
+							"function(" || $fargs || "){ " || $fn || "}"
+						else
+							$fn
 };
 
 declare function raddle:define($value,$params){
