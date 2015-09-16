@@ -420,20 +420,77 @@ declare function raddle:process($value,$params){
 				let $def := raddle:define($define($i),$params)
 				return map:entry($def("qname"),$def)
 		))
-	let $func := raddle:compile($compile,(),(),map:new(($params,map { "top" := true() })))
+	let $func :=
+		if(array:size($compile)>0) then
+			raddle:compile($compile,(),(),map:new(($params,map { "top" := true() })))
+		else
+			()
 	return map:new(($dict, map { "anon:top#1" := map { "name":="top","qname":="anon:top#1","body":=$compile,"func":=$func }}))
 };
 
 declare function raddle:module($dict,$params){
-	let $str :=
+	let $mappath :=
+		if(map:contains($params,"modules")) then
+			$params("modules")
+		else
+			"modules.xml"
+	let $map := doc($mappath)/root/module
+	let $mods :=
 		for $key in map:keys($dict) return
-			if(matches($key,"^local:")) then
-				"declare function local:" || $dict($key)("name") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
-			else if(matches($key,"^anon:")) then
-				$dict($key)("func")
+			if(matches($key,"^local:|^anon:")) then
+				()
+			else
+				$dict($key)("ns")
+	let $module :=
+		if(map:contains($params,"module")) then
+			$params("module")
+		else
+			()
+	let $import := 
+		for $ns in distinct-values($mods) return
+			if($ns) then
+				let $entry := $map[@prefix = $ns]
+				return
+					if($entry/@location) then
+						"import module namespace " || $ns || "=&quot;" || $entry/@uri || "&quot; at &quot;" || $entry/@location || "&quot;;"
+					else
+						if(not(exists($module)) or $module("prefix") ne $ns) then
+							"declare namespace " || $ns || "=&quot;" || $entry/@uri || "&quot;;"
+						else
+							()
+			else
+				()
+	let $local := 
+		for $key in map:keys($dict) return
+			if((exists($module) and starts-with($key,$module("prefix") || ":")) or matches($key,"^local:")) then
+				"declare function " || $dict($key)("qname") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
 			else
 				 ()
-	return "xquery version &quot;3.1&quot;;" || string-join($str,"&#13;")
+	let $anon := 
+		for $key in map:keys($dict) return
+			if(matches($key,"^anon:")) then
+				$dict($key)("func")
+			else
+				()
+	let $moduledef :=
+		if(exists($module)) then
+			"module namespace " || $module("prefix") || "=&quot;" || $module("uri") || "&quot;;&#xa;"
+		else
+			()
+	return "xquery version &quot;3.1&quot;;&#xa;" || $moduledef || string-join(($import,$local,$anon),"&#xa;")
+};
+
+declare function raddle:store-module($dict,$params) {
+	if(map:contains($params,"module")) then
+		let $def := $params("module")
+		let $location := $def("location")
+		let $coll := replace($location, "^(.*)/[^/]+/?$", "$1")
+		let $name := replace($location, "^.*/([^/]+)$", "$1")
+		let $mod := raddle:module($dict,$params)
+		let $store := xmldb:store($coll,$name,$mod,"application/xquery")
+		return "Module successfully stored to: " || $store
+	else
+		"No module definition found in params"
 };
 
 declare function raddle:eval($dict,$params){
@@ -507,7 +564,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 								","
 							else
 								""
-						 return $c(1) || $pre || $t || string-join($p,",") || "])"
+						 return $c(1) || $pre || $t || string-join($p,",") || ")"
 					else
 						""
 				})
@@ -562,7 +619,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 		else
 			let $arity := array:size($value("args"))
 			let $name := $value("name")
-			let $qname := concat($name,"#",$arity)
+			let $qname := $name
 			let $args := $value("args")
 			let $args := 
 				array:for-each($args,function($_){
@@ -578,7 +635,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						raddle:convert($_)
 				})
 			let $args2 :=
-				local:fold-left($args,["apply(" || $qname || ",["],function($pre,$cur,$i){
+				local:fold-left($args,[$qname || "("],function($pre,$cur,$i){
 					if(matches($cur,"^(\./)|\.$")) then
 						array:append($pre,"$arg0")
 					else
@@ -594,7 +651,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				if($compose) then
 					$args2
 				else
-					let $args2 := array:append($args2,"])")
+					let $args2 := array:append($args2,")")
 					let $args2 := array:flatten($args2)
 					let $fn := string-join($args2,"")
 					return 
@@ -632,7 +689,6 @@ declare function raddle:define($value,$params){
 						$ns || ":" || $name
 					else
 						$name
-			let $qname := $qname || "#" || $arity
 			let $def :=
 				if(map:contains($params("dict"),$qname)) then
 					map:get($params("dict"),$qname)
