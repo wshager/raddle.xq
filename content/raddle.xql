@@ -2,11 +2,6 @@ xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
 
-declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
-
-import module namespace json="http://www.json.org";
-
-
 declare variable $raddle:chars := "\+\*\$\-:\w%\._\/?#";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\))|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
@@ -347,7 +342,7 @@ declare function raddle:convert($string){
 		let $number := number($string)
 		return
 			if(string($number) = 'NaN') then
-				"'" || util:unescape-uri($string,"UTF-8") || "'"
+				"&quot;" || util:unescape-uri($string,"UTF-8") || "&quot;"
 			else
 				$number
 };
@@ -578,18 +573,18 @@ declare function raddle:index-of($arr,$v){
 
 declare function raddle:get-seq-type($value) {
 	if(array:size($value) eq 0) then
-		4
+		3
 	else
 		let $type := distinct-values(array:flatten(
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
 					1
-				else if(contains($_,"#")) then
-					2
+(:				else if(contains($_,"#")) then:)
+(:					2:)
 				else if(contains($_,":")) then
-					3
+					2
 				else
-					4
+					3
 			})
 		))
 		return
@@ -599,6 +594,20 @@ declare function raddle:get-seq-type($value) {
 				$type
 };
 
+declare function raddle:serialize($value){
+	if($value instance of map(xs:string, item()?)) then
+		"map {" || string-join(map:for-each-entry($value,function($key,$val){
+			"&quot;" || $key || "&quot; := " || raddle:serialize($val)
+		}),",") || "}"
+	else if($value instance of array(item()?)) then
+		"[" || string-join(array:flatten(array:for-each($value,function($val){
+			raddle:serialize($val)
+		})),",") || "]"
+	else
+		raddle:convert($value)
+};
+
+(: 
 declare function raddle:compose($value){
 	raddle:compose-helper($value, "", 0, array:size($value))
 };
@@ -621,6 +630,7 @@ declare function raddle:compose-helper($value,$result,$argslen,$total){
 		else
 			raddle:compose-helper($tail,$result,$arity+$argslen, $total)
 };
+:)
 
 declare function raddle:compile($value,$parent,$compose,$params){
 	let $top := $params("top")
@@ -657,18 +667,13 @@ declare function raddle:compile($value,$parent,$compose,$params){
 					else
 						""
 				})
+			else if($seqType = 2) then
+				array:fold-left($value,map {},function($pre,$cur){
+					let $p := tokenize($cur,":")
+					return map:new(($pre,map:entry($p[1],$p[2])))
+				})
 			else
-				if($seqType = 2) then
-					raddle:compose($value)
-				else if($seqType = 3) then
-					array:fold-left($value,map {},function($pre,$cur){
-						let $p := tokenize($cur,":")
-						return map:new(($pre,map:entry($p[1],raddle:convert($p[2]))))
-					})
-				else
-					array:for-each($value,function($_){
-						raddle:convert($_)
-					})
+				$value
 		else
 			()
 	let $fargs :=
@@ -697,18 +702,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				"function(" || $fargs || "){" || $ret || "}"
 			else
 				(: stringify :)
-				if($seqType = 2) then
-					$ret
-				else if($seqType = 3) then
-					"map " || serialize($ret,
-					<output:serialization-parameters>
-						<output:method>json</output:method>
-					</output:serialization-parameters>)
-				else
-					serialize($ret,
-					<output:serialization-parameters>
-						<output:method>json</output:method>
-					</output:serialization-parameters>)
+				raddle:serialize($ret)
 		else
 			let $arity := array:size($value("args"))
 			let $qname := $value("name")
