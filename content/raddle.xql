@@ -522,7 +522,15 @@ declare function raddle:create-module($dict,$params){
 	let $local := 
 		for $key in map:keys($dict) return
 			if((exists($module) and starts-with($key,$module("prefix") || ":")) or matches($key,"^local:")) then
-				"declare function " || $dict($key)("qname") || substring($dict($key)("func"),9,string-length($dict($key)("func"))) || ";"
+				let $ret := $dict($key)("func")
+				let $pre := substring($ret,1,8)
+				let $ret :=
+					if($pre eq "function") then
+						substring($ret,9)
+					else
+						"(){" || $ret || "}"
+				return
+					"declare function " || $dict($key)("qname") || $ret || ";"
 			else
 				 ()
 	let $anon := 
