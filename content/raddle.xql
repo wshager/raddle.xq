@@ -87,7 +87,7 @@ declare function raddle:wrap($analysis,$ret){
 			$ret
 };
 
-declare function raddle:parse($query as xs:string?, $parameters as xs:anyAtomicType?) {
+declare function raddle:parse($query as xs:string?, $parameters as item()*) {
 	let $query:= raddle:normalize-query($query,$parameters)
 	return if($query ne "") then
 		let $analysis := analyze-string($query, $raddle:leftoverRegExp)
@@ -282,7 +282,7 @@ declare function raddle:set-conjunction($query as xs:string) {
 };
 
 
-declare function raddle:normalize-query($query as xs:string?, $parameters as xs:anyAtomicType?){
+declare function raddle:normalize-query($query as xs:string?, $parameters as item()*){
 	let $query :=
 		if(not($query)) then
 			""
@@ -445,6 +445,14 @@ declare function raddle:use($value,$params){
 };
 
 declare function raddle:process($value,$params){
+	let $compile := 
+		array:filter($value,function($arg){
+			not($arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module"))
+		})
+	let $value :=
+		array:filter($value,function($arg){
+			$arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module")
+		})
 	let $mod := 
 		array:filter($value,function($arg){
 			$arg("name")="module"
@@ -456,10 +464,6 @@ declare function raddle:process($value,$params){
 	let $define := 
 		array:filter($value,function($arg){
 			$arg("name")="define"
-		})
-	let $compile := 
-		array:filter($value,function($arg){
-			not($arg("name") = ("use","define","module"))
 		})
 	let $dict := 
 		map:new(($params("dict"),
@@ -474,7 +478,7 @@ declare function raddle:process($value,$params){
 		))
 	let $func :=
 		if(array:size($compile)>0) then
-			raddle:compile($compile,(),(),map:new(($params,map { "top" := true() })))
+			raddle:compile($compile(1),(),(),map:new(($params,map { "top" := true() })))
 		else
 			()
 	return
@@ -482,12 +486,17 @@ declare function raddle:process($value,$params){
 		if(array:size($mod)>0) then
 			let $module := raddle:module($mod(1),$params)
 			let $modstr := raddle:create-module($dict,map:new(($params,map { "module" := $module})))
-			return map:new(($dict, map:new(map:entry($module("prefix"),map:new(($module,map { "func" := $modstr }))))))
-		else
+			return map:new(($dict, map:new(map:entry($module("prefix"),map:new(($module,map { "has_module":=true(),"func" := $modstr }))))))
+		else if(array:size($compile)>0) then
 			map:new(($dict, map { "anon:top#1" := map { "name":="top","qname":="anon:top#1","body":=$compile,"func":=$func }}))
+		else $dict
 };
 
 declare function raddle:create-module($dict,$params){
+	raddle:create-module($dict,$params,false())
+};
+
+declare function raddle:create-module($dict,$params,$top){
 	let $mappath :=
 		if(map:contains($params,"modules")) then
 			$params("modules")
@@ -541,42 +550,10 @@ declare function raddle:create-module($dict,$params){
 				()
 	let $moduledef :=
 		if(exists($module)) then
-			"module namespace " || $module("prefix") || "=&quot;" || $module("uri") || "&quot;;&#xa;"
+			(if($top) then "declare" else "module") || " namespace " || $module("prefix") || "=&quot;" || $module("uri") || "&quot;;&#xa;"
 		else
 			()
 	return "xquery version &quot;3.1&quot;;&#xa;" || $moduledef || string-join(($import,$local,$anon),"&#xa;")
-};
-
-declare function raddle:store-module($dict,$params) {
-	if(map:contains($params,"module")) then
-		let $def := $params("module")
-		let $location := $def("location")
-		let $coll := replace($location, "^(.*)/[^/]+/?$", "$1")
-		let $name := replace($location, "^.*/([^/]+)$", "$1")
-		let $mod := raddle:create-module($dict,$params)
-		let $store := xmldb:store($coll,$name,$mod,"application/xquery")
-		return "Module successfully stored to: " || $store
-	else
-		"No module definition found in params"
-};
-
-declare function raddle:eval($dict,$params){
-	let $str := raddle:create-module($dict,$params)
-	return util:eval($str)
-};
-
-declare function raddle:update-array($arr,$i,$val){
-	let $arr := array:remove($arr,$i)
-	return array:insert-before($arr,$i,$val)
-};
-
-declare function raddle:index-of($arr,$v){
-	index-of(array:for-each($arr, function($_){
-		if($_ = $v) then
-			1
-		else
-			0
-	}),1)
 };
 
 declare function raddle:get-seq-type($value) {
@@ -587,8 +564,6 @@ declare function raddle:get-seq-type($value) {
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
 					1
-(:				else if(contains($_,"#")) then:)
-(:					2:)
 				else if(contains($_,":")) then
 					2
 				else
@@ -615,7 +590,20 @@ declare function raddle:serialize($value){
 		raddle:convert($value)
 };
 
-(: 
+(:
+declare function raddle:update-array($arr,$i,$val){
+	let $arr := array:remove($arr,$i)
+	return array:insert-before($arr,$i,$val)
+};
+
+declare function raddle:index-of($arr,$v){
+	index-of(array:for-each($arr, function($_){
+		if($_ = $v) then
+			1
+		else
+			0
+	}),1)
+};
 declare function raddle:compose($value){
 	raddle:compose-helper($value, "", 0, array:size($value))
 };
@@ -644,6 +632,10 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $top := $params("top")
 	let $params := map:remove($params,"top")
 	let $isSeq := $value instance of array(item()?)
+	return
+		if(not($isSeq or $value instance of map(xs:string, item()?))) then
+			raddle:serialize($value)
+		else
 	let $seqType :=
 		if($isSeq) then
 			raddle:get-seq-type($value)
@@ -745,6 +737,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				if($compose) then
 					$args2
 				else
+					(: TODO detect exec :)
 					let $args2 := array:append($args2,")")
 					let $args2 := array:flatten($args2)
 					let $fn := string-join($args2,"")
@@ -802,4 +795,28 @@ declare function raddle:define($value,$params){
 				else
 					$def
 	return $def
+};
+
+declare function raddle:transpile($str,$params) {
+	let $value := raddle:parse($str,$params)
+	let $dict := raddle:process($value,$params)
+	return
+		if(map:contains($dict,"anon:top#1")) then
+			(: TODO detect namespace declaration(s) :)
+			raddle:create-module($dict,$params,true())
+		else
+			let $moduledefs := 
+				map:for-each-entry($dict,function($key,$val){
+					if(map:contains($val,"has_module") and $val("has_module") and map:contains($val,"func")) then
+						$val("func")
+					else
+						()
+				})
+			return
+				if(count($moduledefs) = 1) then
+					$moduledefs[1]
+				else if(map:contains($params,"module")) then
+					raddle:create-module($dict,$params)
+				else
+					error(xs:QName("raddle:moduleError"), "Modules must be declared in the file or by passing a module definition parameter.")
 };
