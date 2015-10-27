@@ -373,7 +373,7 @@ declare function raddle:import-module($name,$params){
 	}
 };
 
-declare function raddle:create-uri($path as xs:string, $params as item()*) as xs:string* {
+declare function raddle:create-uri($path as xs:string, $params as item()*) {
 	let $regex := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$"
 	let $groups := analyze-string($path,$regex)//fn:group
 	let $protocol := $groups[@nr = 2]/text()
@@ -386,25 +386,24 @@ declare function raddle:create-uri($path as xs:string, $params as item()*) as xs
 		if($ext eq "") then
 			".rdl"
 		else
-			""
-	let $path :=
-		if($protocol = "xmldb:exist") then
-			"/" || $path || "/" || $file
-		else
-			$path || "/" || $file
+			$ext
 	let $uri :=
-		if(empty($protocol)) then
-			$params("raddled") || "/" || $path || $ext
-		else
-			$path || $ext
-	(: TODO infer prefix: check if the remote location is a collection or document :)
-	(: otherwise assume file has a 'module' declaration :)
-	let $prefix :=
-		if($ext eq "" and $protocol = ("","xmldb:exist") and util:binary-doc-available($uri)) then
-			$file
-		else
-			$parts[last()]
-	return ($uri,$prefix)
+		(
+			if(empty($protocol)) then
+				$params("raddled") || "/"
+			else if($protocol = "xmldb:exist") then
+				"/"
+			else
+				""
+		) || $path || "/" || $file || $ext
+	(: TODO add parent for partial modules :)
+	return map {
+		"location" := $uri,
+		"collection":= $path,
+		"parent" := $parts[last()],
+		"file" := $file,
+		"ext" := $ext
+	}
 };
 
 declare function raddle:module($value,$params){
@@ -418,30 +417,16 @@ declare function raddle:module($value,$params){
 };
 
 declare function raddle:use($value,$params){
-	let $mods := $value("args")
-	let $mappath :=
-		if(map:contains($params,"modules")) then
-			$params("modules")
-		else
-			"modules.xml"
-	let $map := doc($mappath)/root/module
-	return
-		map:new(
-			array:flatten(
-				array:for-each($mods,function($_){
-					let $uri := raddle:create-uri($_,$params)
-					let $path := $uri[1]
-					let $src := util:binary-to-string(util:binary-doc($path))
-					let $parsed := raddle:parse($src)
-					let $main := tokenize($_,"/")[1]
-					let $prefix := if(exists($map[@name = $main])) then
-							string($map[@name = $main]/@prefix)
-						else
-							$uri[2]
-					return raddle:process($parsed,map:new(($params,map {"use" := $prefix})))
-				})
-			)
+	map:new(
+		array:flatten(
+			array:for-each($value("args"),function($_){
+				let $uri := raddle:create-uri($_,$params)
+				let $src := util:binary-to-string(util:binary-doc($uri("location")))
+				let $parsed := raddle:parse($src)
+				return raddle:process($parsed,map:new(($params,map {"use" := $uri})))
+			})
 		)
+	)
 };
 
 declare function raddle:process($value,$params){
@@ -497,6 +482,7 @@ declare function raddle:create-module($dict,$params){
 };
 
 declare function raddle:create-module($dict,$params,$top){
+	(: if 'use' in params, look for a precompiled module :)
 	let $mappath :=
 		if(map:contains($params,"modules")) then
 			$params("modules")
@@ -761,9 +747,15 @@ declare function raddle:define($value,$params){
 			let $arity := array:size($args)
 			let $type := $value("args")(3)
 			let $parts := tokenize($name,":")
+			(:
+				assume the following:
+				- namespace is in module definition
+				- namespace is in parent definition
+				- namespace is parent
+			:)
 			let $ns :=
 				if($l=3) then
-					$params("use")
+					$params("use")("parent")
 				else if(count($parts)>1) then
 					$parts[1]
 				else
