@@ -395,7 +395,7 @@ declare function raddle:create-uri($path as xs:string, $params as item()*) {
 				"/"
 			else
 				""
-		) || $path || "/" || $file || $ext
+		) || $path || (if($path eq "") then "" else "/") || $file || $ext
 	(: TODO add parent for partial modules :)
 	return map {
 		"location" := $uri,
@@ -442,6 +442,16 @@ declare function raddle:process($value,$params){
 		array:filter($value,function($arg){
 			$arg("name")="module"
 		})
+	let $module := 
+		if(array:size($mod)>0) then
+			raddle:module($mod(1),$params)
+		else
+			()
+	let $params :=
+		if(exists($module)) then
+			map:new(($params,map { "module" := $module}))
+		else
+			$params
 	let $use := 
 		array:filter($value,function($arg){
 			$arg("name")="use"
@@ -469,9 +479,7 @@ declare function raddle:process($value,$params){
 	return
 		(: TODO add module info to dictionary :)
 		if(array:size($mod)>0) then
-			let $module := raddle:module($mod(1),$params)
-			let $modstr := raddle:create-module($dict,map:new(($params,map { "module" := $module})))
-			return map:new(($dict, map:new(map:entry($module("prefix"),map:new(($module,map { "has_module":=true(),"func" := $modstr }))))))
+			raddle:insert-module($dict,$params)
 		else if(array:size($compile)>0) then
 			map:new(($dict, map { "anon:top#1" := map { "name":="top","qname":="anon:top#1","body":=$compile,"func":=$func }}))
 		else $dict
@@ -482,34 +490,38 @@ declare function raddle:create-module($dict,$params){
 };
 
 declare function raddle:create-module($dict,$params,$top){
-	(: if 'use' in params, look for a precompiled module :)
 	let $mappath :=
 		if(map:contains($params,"modules")) then
 			$params("modules")
 		else
 			"modules.xml"
 	let $map := doc($mappath)/root/module
+	let $module :=
+		if(map:contains($params,"module")) then
+			$params("module")
+		else
+			()
+	let $default :=
+		if(map:contains($params,"default-namespace-prefix")) then
+			$params("default-namespace-prefix")
+		else
+			"fn"
 	let $mods :=
 		for $key in map:keys($dict) return
 			if(matches($key,"^local:|^anon:")) then
 				()
 			else
 				$dict($key)("prefix")
-	let $module :=
-		if(map:contains($params,"module")) then
-			$params("module")
-		else
-			()
 	let $import := 
-		for $ns in distinct-values($mods) return
-			if($ns) then
-				let $entry := $map[@prefix = $ns]
+		for $prefix in distinct-values($mods) return
+			if($prefix) then
+				let $entry := $map[@prefix = $prefix]
 				return
 					if($entry/@location) then
-						"import module namespace " || $ns || "=&quot;" || $entry/@uri || "&quot; at &quot;" || $entry/@location || "&quot;;"
+						"import module namespace " || $prefix || "=&quot;" || $entry/@uri || "&quot; at &quot;" || $entry/@location || "&quot;;"
 					else
-						if(not(exists($module)) or $module("prefix") ne $ns) then
-							"declare namespace " || $ns || "=&quot;" || $entry/@uri || "&quot;;"
+						if($prefix ne $default and $prefix ne "local" and (not(exists($module)) or $module("prefix") ne $prefix)) then
+							"declare namespace " || $prefix || "=&quot;" || $entry/@uri || "&quot;;"
 						else
 							()
 			else
@@ -540,6 +552,33 @@ declare function raddle:create-module($dict,$params,$top){
 		else
 			()
 	return "xquery version &quot;3.1&quot;;&#xa;" || $moduledef || string-join(($import,$local,$anon),"&#xa;")
+};
+
+declare function raddle:insert-module($dict,$params){
+	(: TODO: if 'use' in params, look for a precompiled module :)
+	let $mappath :=
+		if(map:contains($params,"modules")) then
+			$params("modules")
+		else
+			"modules.xml"
+	let $map := doc($mappath)/root/module
+	let $module :=
+		if(map:contains($params,"module")) then
+			$params("module")
+		else
+			()
+	let $default :=
+		if(map:contains($params,"default-namespace-prefix")) then
+			$params("default-namespace-prefix")
+		else
+			"fn"
+	let $module :=
+		if($map[@uri=$module("uri")]) then
+			$module
+		else
+			let $modstr := raddle:create-module($dict,$params)
+			return map:new(($module,map { "has_module" := true(),"func" := $modstr }))
+	return map:new(($dict, map:new(map:entry($module("prefix"),$module))))
 };
 
 declare function raddle:get-seq-type($value) {
@@ -737,6 +776,11 @@ declare function raddle:compile($value,$parent,$compose,$params){
 declare function raddle:define($value,$params){
 	let $l := array:size($value("args"))
 	let $name := $value("args")(1)
+	let $default :=
+		if(map:contains($params,"default-namespace-prefix")) then
+			$params("default-namespace-prefix")
+		else
+			"fn"
 	let $def :=
 		if($l=2) then
 			let $def := $params("dict")($name)
@@ -753,19 +797,19 @@ declare function raddle:define($value,$params){
 				- namespace is in parent definition
 				- namespace is parent
 			:)
-			let $ns :=
+			let $prefix :=
 				if($l=3) then
 					$params("use")("parent")
-				else if(count($parts)>1) then
-					$parts[1]
+				else if(map:contains($params,"module")) then
+					$params("module")("prefix")
 				else
 					"local"
 			let $qname :=
 				if(contains($name,":")) then
 					$name
 				else
-					if($ns) then
-						$ns || ":" || $name
+					if($prefix) then
+						$prefix || ":" || $name
 					else
 						$name
 			let $def :=
@@ -775,7 +819,7 @@ declare function raddle:define($value,$params){
 					map {
 						"qname" := $qname,
 						"arity" := $arity,
-						"prefix" := $ns,
+						"prefix" := $prefix,
 						"type" := $type,
 						"args" := $args,
 						"body" := if($l=3) then () else $value("args")(4)
