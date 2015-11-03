@@ -49,7 +49,7 @@ declare function raddle:get-index($close,$open,$ret){
 			$ret
 };
 
-declare function raddle:wrap($analysis,$ret){
+declare function raddle:wrap($analysis,$strings,$ret){
 	let $x := head($analysis)
 	let $closedParen := $x/fn:group[@nr=1]/text()
 	let $delim := $x/fn:group[@nr=2]/text()
@@ -74,25 +74,39 @@ declare function raddle:wrap($analysis,$ret){
 			let $next := subsequence($rest,1,$index)
 			let $ret := 
 				if($propertyOrValue) then
-					array:append($ret,map { "name" := $propertyOrValue, "args" := raddle:wrap($next,[])})
+					let $val :=
+						if(matches($propertyOrValue,"\$s")) then
+							$strings[number(replace($propertyOrValue,"\$s",""))]/string()
+						else
+							$propertyOrValue
+					return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[])})
 				else
-					array:append($ret,raddle:wrap($next,[]))
-			return raddle:wrap(subsequence($rest,$index,count($rest)),$ret)
+					array:append($ret,raddle:wrap($next,$strings,[]))
+			return raddle:wrap(subsequence($rest,$index,count($rest)),$strings,$ret)
 		else if($closedParen) then
-			raddle:wrap($rest,$ret)
+			raddle:wrap($rest,$strings,$ret)
 		else if($propertyOrValue or $delim eq ",") then
-			let $ret := array:append($ret,$propertyOrValue)
-			return raddle:wrap($rest,$ret)
+			let $val :=
+				if(matches($propertyOrValue,"\$s")) then
+					$strings[number(replace($propertyOrValue,"\$s",""))]/string()
+				else
+					$propertyOrValue
+			let $ret := array:append($ret,$val)
+			return raddle:wrap($rest,$strings,$ret)
 		else
 			$ret
 };
 
 declare function raddle:parse($query as xs:string?, $parameters as item()*) {
-	let $query:= raddle:normalize-query($query,$parameters)
+	let $strings := analyze-string($query, "'[^']*'")/*
+	let $query := string-join(for $i in 1 to count($strings) return
+		if(name($strings[$i]) eq "match") then
+			"$s" || $i
+		else
+			$strings[$i]/string())
+	let $query:= raddle:normalize-query($query)
 	return if($query ne "") then
-		let $analysis := analyze-string($query, $raddle:leftoverRegExp)
-		let $ret := raddle:wrap($analysis/*,[])
-		return $ret
+		raddle:wrap(analyze-string($query, $raddle:leftoverRegExp)/*,$strings,[])
 	else
 		[]
 };
@@ -282,7 +296,7 @@ declare function raddle:set-conjunction($query as xs:string) {
 };
 
 
-declare function raddle:normalize-query($query as xs:string?, $parameters as item()*){
+declare function raddle:normalize-query($query as xs:string?){
 	let $query :=
 		if(not($query)) then
 			""
@@ -334,7 +348,9 @@ declare variable $raddle:auto-converted := map {
 };
 
 declare function raddle:convert($string){
-	if(contains($string,"#")) then
+	if(matches($string,"'[^']*'")) then
+		"&quot;" || substring($string,2,string-length($string)-2) || "&quot;"
+	else if(contains($string,"#")) then
 		$string
 	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
@@ -342,7 +358,7 @@ declare function raddle:convert($string){
 		let $number := number($string)
 		return
 			if(string($number) = 'NaN') then
-				"&quot;" || util:unescape-uri($string,"UTF-8") || "&quot;"
+				"&quot;" || $string || "&quot;"
 			else
 				$number
 };
