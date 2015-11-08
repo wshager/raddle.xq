@@ -658,7 +658,7 @@ declare function raddle:compose-helper($value,$result,$argslen,$total){
 	let $fn := $p[1]
 	let $arity := xs:integer($p[2]) - $n
 	let $a := for $i in 1 to $arity return "$arg" || ($i+$argslen)
-	let $result := $fn || "("  || $result || (if($n=1 and $arity>0) then "," else "") || string-join($a,",") || ")"
+	let $result := $fn || "(" || $result || (if($n=1 and $arity>0) then "," else "") || string-join($a,",") || ")"
 	return
 		if($len=1) then
 			let $f := for $i in 1 to $total return "$f" || $i
@@ -685,26 +685,20 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $ret :=
 		if($isSeq) then
 			if($seqType = 1) then
-				local:fold-left($value,"",function($pre,$cur,$i){
+				array:fold-left($value,"",function($pre,$cur){
 					if($cur instance of map(xs:string, item()?)) then
 						(: compose the functions in the array :)
 						let $c := raddle:compile($cur,(),true(),$params)
-						let $p :=
-							if(array:size($c)>1) then
-								tokenize($c(2),",")
+						let $qname := array:head($c)
+						let $args := array:flatten(array:tail($c))
+						let $args := 
+							if(count($args) > 1 and $pre ne "") then
+								let $index := index-of($args,"$arg0")
+								let $args := remove($args,$index)
+								return insert-before($args,$index,$pre)
 							else
-								()
-						 let $p :=
-							if(exists($parent) and count($p)>0 and $p[1] = "$arg0") then
-								remove($p,1)
-							else
-								$p
-						 let $t :=
-							if(count($p) > 0 and $i > 0) then
-								","
-							else
-								""
-						 return $c(1) || $pre || $t || string-join($p,",") || ")"
+								$args
+						return $qname || "(" || string-join($args,",") || ")"
 					else
 						""
 				})
@@ -733,7 +727,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			"$arg0"
 	let $fname :=
 		if(exists($parent)) then
-(:		  let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
+(:			let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
 			 $parent("qname")
 		else
 			"anon"
@@ -754,34 +748,19 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						raddle:compile($_,(),(),$params)
 					else if($_ instance of map(xs:string, item()?)) then
 						raddle:compile($_,(),(),$params)
-					else if(matches(string($_),"^(\./)|\.$")) then
-						$_
+					else if(string($_) = ".") then
+						"$arg0"
 					else if(matches(string($_),"^\$[0-9]+$")) then
 						replace($_,"^\$([0-9]+)$","\$arg$1")
 					else
 						raddle:convert($_)
 				})
-			let $args2 :=
-				local:fold-left($args,[$qname || "("],function($pre,$cur,$i){
-					if(matches($cur,"^(\./)|\.$")) then
-						array:append($pre,"$arg0")
-					else
-						let $s := array:size($pre)
-						let $last := $pre($s)
-						return
-							if(matches($last,"^(\./)|\.$") or $s<2) then
-								array:append($pre,$cur)
-							else
-								array:append(array:remove($pre,$s),$last || "," || $cur)
-				})
 			return
 				if($compose) then
-					$args2
+					array:insert-before($args,1,$qname)
 				else
 					(: TODO detect exec :)
-					let $args2 := array:append($args2,")")
-					let $args2 := array:flatten($args2)
-					let $fn := string-join($args2,"")
+					let $fn := $qname || "(" || string-join(array:flatten($args),",") || ")"
 					return 
 						if(exists($parent) or $top) then
 							"function(" || $fargs || "){ " || $fn || "}"
