@@ -13,3 +13,16 @@ declare function x:call($fn,$a,$b) {
 declare function x:call($fn,$a,$b,$c) {
     $fn($a,$b,$c)
 };
+
+declare function x:seqx($in,$a) {
+    ($in,$a($in))
+};
+
+
+declare function x:seqx($in,$a,$b) {
+    ($in,$a($in),$b($in))
+};
+
+declare function x:seqx($in,$a,$b,$c) {
+    ($in,$a($in),$b($in),$c($in))
+};
