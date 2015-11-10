@@ -2,9 +2,10 @@ xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
 
-declare variable $raddle:chars := "\+\*\$\-:\w%\._\/?#";
+declare variable $raddle:suffix := "\+\*\-\?";
+declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
-declare variable $raddle:leftoverRegExp := concat("(\))|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
+declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
 declare variable $raddle:operatorMap := map {
@@ -30,11 +31,27 @@ declare function local:fold-left($array as array(*), $acc, $fn as function(*), $
 			local:fold-left(array:tail($array), $fn($acc,array:head($array),$total - $i), $fn, $total)
 };
 
+declare function raddle:map-put($map,$key,$val){
+	map:new(($map,map {$key := $val}))
+};
+
 declare function raddle:parse($query as xs:string) {
 	raddle:parse($query, ())
 };
 
-declare function raddle:get-index($close,$open,$ret){
+declare function raddle:get-index($rest,$ret){
+	let $close :=
+		for $i in 1 to count($rest) return 
+			if($rest[$i]/fn:group[@nr=1]/text()) then
+				$i
+			else
+				()
+	let $open :=
+		for $i in 1 to count($rest) return 
+			if($rest[$i]/fn:group[@nr=4]/text()) then
+				$i
+			else
+				()
 	let $l := count($close)
 	return
 		if(empty($ret) and $l > 0) then
@@ -44,33 +61,34 @@ declare function raddle:get-index($close,$open,$ret){
 						()
 					else
 						$close[$i]
-			return raddle:get-index(tail($close),tail($open),$ret)
+			return raddle:get-index(tail($rest),$ret)
 		else
 			$ret
 };
 
 declare function raddle:wrap($analysis,$strings,$ret){
+	raddle:wrap($analysis,$strings,$ret,"")
+};
+
+declare function raddle:wrap($analysis,$strings,$ret,$suffix){
 	let $x := head($analysis)
 	let $closedParen := $x/fn:group[@nr=1]/text()
 	let $delim := $x/fn:group[@nr=2]/text()
 	let $propertyOrValue := $x/fn:group[@nr=3]/text()
 	let $openParen := $x/fn:group[@nr=4]/text()
 	let $rest := tail($analysis)
+	let $ret :=
+		if($suffix ne "" and array:size($ret)>0) then
+			let $retr := array:reverse($ret)
+			let $body := array:reverse(array:tail($retr))
+			let $last := raddle:map-put(array:head($retr),"suffix",$suffix)
+			return
+				array:append($body,$last)
+		else
+			$ret
 	return
 		if($openParen) then
-			let $close :=
-				for $i in 1 to count($rest) return 
-					if($rest[$i]/fn:group[@nr=1]/text()) then
-						$i
-					else
-						()
-			let $open :=
-				for $i in 1 to count($rest) return 
-					if($rest[$i]/fn:group[@nr=4]/text()) then
-						$i
-					else
-						()
-			let $index := raddle:get-index($close,$open,())[1]
+			let $index := raddle:get-index($rest,())[1]
 			let $next := subsequence($rest,1,$index)
 			let $ret := 
 				if($propertyOrValue) then
@@ -84,7 +102,7 @@ declare function raddle:wrap($analysis,$strings,$ret){
 					array:append($ret,raddle:wrap($next,$strings,[]))
 			return raddle:wrap(subsequence($rest,$index,count($rest)),$strings,$ret)
 		else if($closedParen) then
-			raddle:wrap($rest,$strings,$ret)
+			raddle:wrap($rest,$strings,$ret,replace($closedParen,"\)",""))
 		else if($propertyOrValue or $delim eq ",") then
 			let $val :=
 				if(matches($propertyOrValue,"\$s")) then
@@ -106,7 +124,7 @@ declare function raddle:parse($query as xs:string?, $parameters as item()*) {
 			$strings[$i]/string())
 	let $query:= raddle:normalize-query($query)
 	return if($query ne "") then
-		raddle:wrap(analyze-string($query, $raddle:leftoverRegExp)/*,$strings,[])
+		raddle:wrap(analyze-string($query, $raddle:leftoverRegExp)/fn:match,$strings,[])
 	else
 		[]
 };
@@ -365,7 +383,16 @@ declare function raddle:convert($string){
 
 declare variable $raddle:type-map := map {
 	"any" := "xs:anyAtomicType",
-	"element" := "element()"
+	"element" := "element()",
+	"item" := "item()",
+	"array" := "array(item()?)",
+	"map" := "map(xs:string,item()?)",
+	"string" := "xs:string",
+	"int" := "xs:int",
+	"integer" := "xs:integer",
+	"boolean" := "xs:boolean",
+	"decimal" := "xs:decimal",
+	"float" := "xs:float"
 };
 
 declare function raddle:import-module($name,$params){
@@ -597,18 +624,16 @@ declare function raddle:insert-module($dict,$params){
 	return map:new(($dict, map:new(map:entry($module("prefix"),$module))))
 };
 
-declare function raddle:get-seq-type($value) {
+declare function raddle:is-fn-seq($value) {
 	if(array:size($value) eq 0) then
-		3
+		false()
 	else
 		let $type := distinct-values(array:flatten(
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
-					1
-				else if(contains($_,":")) then
-					2
+					true()
 				else
-					3
+					false()
 			})
 		))
 		return
@@ -620,13 +645,12 @@ declare function raddle:get-seq-type($value) {
 
 declare function raddle:serialize($value){
 	if($value instance of map(xs:string, item()?)) then
-		"map {" || string-join(map:for-each-entry($value,function($key,$val){
-			"&quot;" || $key || "&quot; := " || raddle:serialize($val)
-		}),",") || "}"
-	else if($value instance of array(item()?)) then
-		"[" || string-join(array:flatten(array:for-each($value,function($val){
+		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args")) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
+	else
+	if($value instance of array(item()?)) then
+		"(" || string-join(array:flatten(array:for-each($value,function($val){
 			raddle:serialize($val)
-		})),",") || "]"
+		})),",") || ")"
 	else
 		raddle:convert($value)
 };
@@ -677,14 +701,10 @@ declare function raddle:compile($value,$parent,$compose,$params){
 		if(not($isSeq or $value instance of map(xs:string, item()?))) then
 			raddle:serialize($value)
 		else
-	let $seqType :=
-		if($isSeq) then
-			raddle:get-seq-type($value)
-		else
-			0
+	let $fn-seq := if($isSeq) then raddle:is-fn-seq($value) else false()
 	let $ret :=
 		if($isSeq) then
-			if($seqType = 1) then
+			if($fn-seq) then
 				array:fold-left($value,"",function($pre,$cur){
 					if($cur instance of map(xs:string, item()?)) then
 						(: compose the functions in the array :)
@@ -702,11 +722,6 @@ declare function raddle:compile($value,$parent,$compose,$params){
 					else
 						""
 				})
-			else if($seqType = 2) then
-				array:fold-left($value,map {},function($pre,$cur){
-					let $p := tokenize($cur,":")
-					return map:new(($pre,map:entry($p[1],$p[2])))
-				})
 			else
 				$value
 		else
@@ -715,12 +730,16 @@ declare function raddle:compile($value,$parent,$compose,$params){
 		if(exists($parent)) then
 			string-join((for $i in 1 to array:size($parent("args")) return
 				let $type := $parent("args")($i)
-				let $stype := replace($type,"\*|\+","")
-				let $xsd := 
-					if(map:contains($raddle:type-map,$stype)) then
-						replace($type,$stype,map:get($raddle:type-map,$stype))
+				let $xsd :=  
+					if($type instance of map(xs:string, item()?)) then
+						raddle:serialize($type)
 					else
-						"xs:" || $stype
+						let $stype := replace($type,"[" || $raddle:suffix || "]?$","")
+						return
+							(if(map:contains($raddle:type-map,$stype)) then
+								replace($stype,$stype,map:get($raddle:type-map,$stype))
+							else
+								$stype) || replace($type,"^[^" || $raddle:suffix || "]*","")
 				return "$arg" || $i || " as " || $xsd
 			),",")
 		else
@@ -733,7 +752,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			"anon"
 	return
 		if($isSeq) then
-			if($seqType = 1) then
+			if($fn-seq) then
 				"function(" || $fargs || "){" || $ret || "}"
 			else
 				(: stringify :)
@@ -793,7 +812,7 @@ declare function raddle:define($value,$params){
 				- namespace is parent
 			:)
 			let $prefix :=
-				if($l=3) then
+				if($l=3 and map:contains($params,"use")) then
 					$params("use")("parent")
 				else if(map:contains($params,"module")) then
 					$params("module")("prefix")
