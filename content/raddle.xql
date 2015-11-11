@@ -81,7 +81,11 @@ declare function raddle:wrap($analysis,$strings,$ret,$suffix){
 		if($suffix ne "" and array:size($ret)>0) then
 			let $retr := array:reverse($ret)
 			let $body := array:reverse(array:tail($retr))
-			let $last := raddle:map-put(array:head($retr),"suffix",$suffix)
+			let $last := array:head($retr)
+			let $last := if($last instance of map(xs:string,item()*)) then
+				raddle:map-put($last,"suffix",$suffix)
+			else
+				$last
 			return
 				array:append($body,$last)
 		else
@@ -366,10 +370,10 @@ declare variable $raddle:auto-converted := map {
 };
 
 declare function raddle:convert($string){
-	if(matches($string,"'[^']*'")) then
-		"&quot;" || substring($string,2,string-length($string)-2) || "&quot;"
-	else if(contains($string,"#")) then
+	if(matches($string,"^(\$.*)|([^#]*#[0-9]+)$")) then
 		$string
+	else if(matches($string,"'[^']*'")) then
+		"&quot;" || substring($string,2,string-length($string)-2) || "&quot;"
 	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
 	else
@@ -475,11 +479,11 @@ declare function raddle:use($value,$params){
 declare function raddle:process($value,$params){
 	let $compile := 
 		array:filter($value,function($arg){
-			not($arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module"))
+			not($arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module","declare"))
 		})
 	let $value :=
 		array:filter($value,function($arg){
-			$arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module")
+			$arg instance of map(xs:string*,item()?) and $arg("name") = ("use","define","module","declare")
 		})
 	let $mod := 
 		array:filter($value,function($arg){
@@ -499,9 +503,16 @@ declare function raddle:process($value,$params){
 		array:filter($value,function($arg){
 			$arg("name")="use"
 		})
-	let $define := 
+	let $declare := 
 		array:filter($value,function($arg){
-			$arg("name")="define"
+			$arg("name")=("declare","define")
+		})
+	let $declare :=
+		array:for-each($declare,function($arg){
+			if($arg("name")="define") then
+				raddle:map-put($arg,"args",array:insert-before($arg("args"),1,"function"))
+			else
+				$arg
 		})
 	let $dict := 
 		map:new(($params("dict"),
@@ -510,8 +521,8 @@ declare function raddle:process($value,$params){
 		))
 	let $dict := 
 		map:new(($dict,
-			for $i in 1 to array:size($define)
-				let $def := raddle:define($define($i),$params)
+			for $i in 1 to array:size($declare)
+				let $def := raddle:declare($declare($i),$params)
 				return map:entry($def("qname"),$def)
 		))
 	let $func :=
@@ -630,7 +641,7 @@ declare function raddle:is-fn-seq($value) {
 	else
 		let $type := distinct-values(array:flatten(
 			array:for-each($value,function($_){
-				if($_ instance of map(xs:string, item()?) or $_ instance of array(item()?)) then
+				if($_ instance of map(xs:string, item()?)) then
 					true()
 				else
 					false()
@@ -644,15 +655,22 @@ declare function raddle:is-fn-seq($value) {
 };
 
 declare function raddle:serialize($value){
+	raddle:serialize($value,true())
+};
+
+declare function raddle:serialize($value,$convert){
 	if($value instance of map(xs:string, item()?)) then
-		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args")) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
+		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args"),$convert) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
 	else
 	if($value instance of array(item()?)) then
 		"(" || string-join(array:flatten(array:for-each($value,function($val){
-			raddle:serialize($val)
+			raddle:serialize($val,$convert)
 		})),",") || ")"
 	else
-		raddle:convert($value)
+		if($convert) then
+			raddle:convert($value)
+		else
+			$value
 };
 
 (:
@@ -732,7 +750,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				let $type := $parent("args")($i)
 				let $xsd :=  
 					if($type instance of map(xs:string, item()?)) then
-						raddle:serialize($type)
+						raddle:serialize($type,false())
 					else
 						let $stype := replace($type,"[" || $raddle:suffix || "]?$","")
 						return
@@ -756,7 +774,12 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				"function(" || $fargs || "){" || $ret || "}"
 			else
 				(: stringify :)
-				raddle:serialize($ret)
+				let $ret := raddle:serialize($ret)
+				return
+					if(exists($parent) or $top) then
+						"function(" || $fargs || "){ " || $ret || "}"
+					else
+						$ret
 		else
 			let $arity := array:size($value("args"))
 			let $qname := $value("name")
@@ -785,6 +808,14 @@ declare function raddle:compile($value,$parent,$compose,$params){
 							"function(" || $fargs || "){ " || $fn || "}"
 						else
 							$fn
+};
+
+declare function raddle:declare($value,$params){
+	let $type := array:head($value("args"))
+	let $args := array:tail($value("args"))
+	return switch ($type)
+		case "namespace" return ()
+		default return raddle:define(map{"args":=$args},$params)
 };
 
 declare function raddle:define($value,$params){
