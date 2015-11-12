@@ -18,6 +18,7 @@ declare variable $raddle:operatorMap := map {
 	"!=" := "ne"
 };
 
+(: 
 declare function local:fold-left($array as array(*), $acc, $fn as function(*)) {
 	local:fold-left($array, $acc, $fn, array:size($array))
 };
@@ -30,6 +31,7 @@ declare function local:fold-left($array as array(*), $acc, $fn as function(*), $
 		else
 			local:fold-left(array:tail($array), $fn($acc,array:head($array),$total - $i), $fn, $total)
 };
+:)
 
 declare function raddle:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
@@ -730,10 +732,12 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						let $qname := array:head($c)
 						let $args := array:flatten(array:tail($c))
 						let $args := 
-							if(count($args) > 1 and $pre ne "") then
+							if(count($args) > 0 and $pre ne "") then
 								let $index := index-of($args,"$arg0")
 								let $args := remove($args,$index)
 								return insert-before($args,$index,$pre)
+							else if($pre ne "") then
+								insert-before($args,1,$pre)
 							else
 								$args
 						return $qname || "(" || string-join($args,",") || ")"
