@@ -656,20 +656,19 @@ declare function raddle:is-fn-seq($value) {
 				$type
 };
 
-declare function raddle:serialize($value){
-	raddle:serialize($value,true())
-};
-
-declare function raddle:serialize($value,$convert){
+declare function raddle:serialize($value,$params){
 	if($value instance of map(xs:string, item()?)) then
-		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args"),$convert) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
+		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
 	else
 	if($value instance of array(item()?)) then
 		"(" || string-join(array:flatten(array:for-each($value,function($val){
-			raddle:serialize($val,$convert)
+			if(exists($params)) then
+				raddle:compile($val,(),(),$params)
+			else
+				raddle:serialize($val,$params)
 		})),",") || ")"
 	else
-		if($convert) then
+		if(exists($params)) then
 			raddle:convert($value)
 		else
 			$value
@@ -719,7 +718,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $isSeq := $value instance of array(item()?)
 	return
 		if(not($isSeq or $value instance of map(xs:string, item()?))) then
-			raddle:serialize($value)
+			raddle:serialize($value,$params)
 		else
 	let $fn-seq := if($isSeq) then raddle:is-fn-seq($value) else false()
 	let $ret :=
@@ -730,6 +729,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						(: compose the functions in the array :)
 						let $c := raddle:compile($cur,(),true(),$params)
 						let $qname := array:head($c)
+						(: TODO keep array and descend into it if nested :)
 						let $args := array:flatten(array:tail($c))
 						let $args := 
 							if(count($args) > 0 and $pre ne "") then
@@ -745,16 +745,16 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						""
 				})
 			else
-				$value
+				raddle:serialize($value,$params)
 		else
 			()
 	let $fargs :=
 		if(exists($parent)) then
 			string-join((for $i in 1 to array:size($parent("args")) return
 				let $type := $parent("args")($i)
-				let $xsd :=  
+				let $xsd :=
 					if($type instance of map(xs:string, item()?)) then
-						raddle:serialize($type,false())
+						raddle:serialize($type,())
 					else
 						let $stype := replace($type,"[" || $raddle:suffix || "]?$","")
 						return
@@ -777,13 +777,10 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			if($fn-seq) then
 				"function(" || $fargs || "){" || $ret || "}"
 			else
-				(: stringify :)
-				let $ret := raddle:serialize($ret)
-				return
-					if(exists($parent) or $top) then
-						"function(" || $fargs || "){ " || $ret || "}"
-					else
-						$ret
+				if(exists($parent) or $top) then
+					"function(" || $fargs || "){ " || $ret || "}"
+				else
+					$ret
 		else
 			let $arity := array:size($value("args"))
 			let $qname := $value("name")
