@@ -72,15 +72,39 @@ declare function raddle:wrap($analysis,$strings,$ret){
 	raddle:wrap($analysis,$strings,$ret,"")
 };
 
+declare function raddle:ret-from-group($next,$group,$strings,$ret){
+	if($group[@nr=4]) then
+		if($group[@nr=3]) then
+			let $val :=
+				if(matches($group[@nr=3],"\$s")) then
+					$strings[number(replace($group[@nr=3],"\$s",""))]/string()
+				else
+					$group[@nr=3]/string()
+			return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[])})
+		else
+			array:append($ret,raddle:wrap($next,$strings,[]))
+	else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
+		let $val :=
+			if(matches($group[@nr=3],"\$s")) then
+				$strings[number(replace($group[@nr=3],"\$s",""))]/string()
+			else
+				$group[@nr=3]/string()
+		return array:append($ret,$val)
+	else
+		$ret
+};
+
+declare function raddle:wrap-with-index($rest,$index,$group,$strings,$ret){
+	raddle:wrap(if($group[@nr=4]) then subsequence($rest,$index) else $rest,$strings,
+		raddle:ret-from-group(subsequence($rest,1,$index),$group,$strings,$ret),if($group[@nr=1]) then replace($group[@nr=1],"\)","") else "")
+};
+
 declare function raddle:wrap($analysis,$strings,$ret,$suffix){
 	let $x := head($analysis)
-	let $closedParen := $x/fn:group[@nr=1]/text()
-	let $delim := $x/fn:group[@nr=2]/text()
-	let $propertyOrValue := $x/fn:group[@nr=3]/text()
-	let $openParen := $x/fn:group[@nr=4]/text()
+	let $group := $x/fn:group
 	let $rest := tail($analysis)
 	let $ret :=
-		if($suffix ne "" and array:size($ret)>0) then
+		if($group[@nr=1] and $suffix ne "" and array:size($ret)>0) then
 			let $retr := array:reverse($ret)
 			let $body := array:reverse(array:tail($retr))
 			let $last := array:head($retr)
@@ -93,44 +117,23 @@ declare function raddle:wrap($analysis,$strings,$ret,$suffix){
 		else
 			$ret
 	return
-		if($openParen) then
-			let $index := raddle:get-index($rest,())[1]
-			let $next := subsequence($rest,1,$index)
-			let $ret := 
-				if($propertyOrValue) then
-					let $val :=
-						if(matches($propertyOrValue,"\$s")) then
-							$strings[number(replace($propertyOrValue,"\$s",""))]/string()
-						else
-							$propertyOrValue
-					return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[])})
-				else
-					array:append($ret,raddle:wrap($next,$strings,[]))
-			return raddle:wrap(subsequence($rest,$index,count($rest)),$strings,$ret)
-		else if($closedParen) then
-			raddle:wrap($rest,$strings,$ret,replace($closedParen,"\)",""))
-		else if($propertyOrValue or $delim eq ",") then
-			let $val :=
-				if(matches($propertyOrValue,"\$s")) then
-					$strings[number(replace($propertyOrValue,"\$s",""))]/string()
-				else
-					$propertyOrValue
-			let $ret := array:append($ret,$val)
-			return raddle:wrap($rest,$strings,$ret)
+		if(exists($rest)) then
+			raddle:wrap-with-index($rest,if($group[@nr=4]) then raddle:get-index($rest,())[1] else 0,$group,$strings,$ret)
 		else
 			$ret
 };
 
-declare function raddle:parse($query as xs:string?, $parameters as item()*) {
-	let $strings := analyze-string($query, "'[^']*'")/*
-	let $query := string-join(for $i in 1 to count($strings) return
+declare function raddle:parse-with-strings($query as xs:string?, $strings, $parameters as item()*) {
+	raddle:wrap(analyze-string(raddle:normalize-query(string-join(for $i in 1 to count($strings) return
 		if(name($strings[$i]) eq "match") then
 			"$s" || $i
 		else
-			$strings[$i]/string())
-	let $query:= raddle:normalize-query($query)
-	return if($query ne "") then
-		raddle:wrap(analyze-string($query, $raddle:leftoverRegExp)/fn:match,$strings,[])
+			$strings[$i]/string())), $raddle:leftoverRegExp)/fn:match,$strings,[])
+};
+
+declare function raddle:parse($query as xs:string?, $parameters as item()*) {
+	if($query ne "") then
+		raddle:parse-with-strings($query,analyze-string($query, "'[^']*'")/*,$parameters)
 	else
 		[]
 };
@@ -595,7 +598,7 @@ declare function raddle:create-module($dict,$params,$top){
 				return
 					"declare function " || $dict($key)("qname") || $ret || ";"
 			else
-				 ()
+				()
 	let $anon := 
 		for $key in map:keys($dict) return
 			if(matches($key,"^anon:")) then
@@ -769,7 +772,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 	let $fname :=
 		if(exists($parent)) then
 (:			let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
-			 $parent("qname")
+			$parent("qname")
 		else
 			"anon"
 	return
@@ -872,8 +875,8 @@ declare function raddle:define($value,$params){
 					}
 			return
 				if($l=4 and not(map:contains($def,"func"))) then
-					 let $func := raddle:compile($def("body"),$def,(),$params)
-					 return map:new(($def,map { "func" := $func }))
+					let $func := raddle:compile($def("body"),$def,(),$params)
+					return map:new(($def,map { "func" := $func }))
 				else
 					$def
 	return $def
