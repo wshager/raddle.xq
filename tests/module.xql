@@ -6,4 +6,6 @@ import module namespace raddle="http://lagua.nl/lib/raddle" at "../content/raddl
 
 let $params := map { "raddled" := "/db/apps/raddle.xq/raddled", "dict" := map {},"modules" := "/db/apps/raddle.xq/content/modules.xml"}
 
-return raddle:transpile("module(x,http://xxx.nl,bla),use(op),define(x:add2,(integer,integer,integer),number,(op:add($1,$2),op:add(.,$3)))",$params)
+let $doc := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/raddle.rdl"))
+
+return raddle:transpile($doc,$params)
