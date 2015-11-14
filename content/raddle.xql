@@ -100,8 +100,7 @@ declare function raddle:wrap-with-index($rest,$index,$group,$strings,$ret){
 };
 
 declare function raddle:wrap($analysis,$strings,$ret,$suffix){
-	let $x := head($analysis)
-	let $group := $x/fn:group
+	let $group := head($analysis)/fn:group
 	let $rest := tail($analysis)
 	let $ret :=
 		if($group[@nr=1] and $suffix ne "" and array:size($ret)>0) then
@@ -123,7 +122,7 @@ declare function raddle:wrap($analysis,$strings,$ret,$suffix){
 			$ret
 };
 
-declare function raddle:parse-with-strings($query as xs:string?, $strings, $parameters as item()*) {
+declare function raddle:parse($query as xs:string?, $strings, $parameters as item()*) {
 	raddle:wrap(analyze-string(raddle:normalize-query(string-join(for $i in 1 to count($strings) return
 		if(name($strings[$i]) eq "match") then
 			"$s" || $i
@@ -133,7 +132,7 @@ declare function raddle:parse-with-strings($query as xs:string?, $strings, $para
 
 declare function raddle:parse($query as xs:string?, $parameters as item()*) {
 	if($query ne "") then
-		raddle:parse-with-strings($query,analyze-string($query, "'[^']*'")/*,$parameters)
+		raddle:parse($query,analyze-string($query, "'[^']*'")/*,$parameters)
 	else
 		[]
 };
@@ -378,7 +377,7 @@ declare function raddle:convert($string){
 	if(matches($string,"^(\$.*)|([^#]*#[0-9]+)$")) then
 		$string
 	else if(matches($string,"'[^']*'")) then
-		"&quot;" || substring($string,2,string-length($string)-2) || "&quot;"
+		"&quot;" || substring(util:unescape-uri($string,"UTF-8"),2,string-length($string)-2) || "&quot;"
 	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
 	else
