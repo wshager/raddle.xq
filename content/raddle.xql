@@ -3,7 +3,7 @@ xquery version "3.1";
 module namespace raddle="http://lagua.nl/lib/raddle";
 
 declare variable $raddle:suffix := "\+\*\-\?";
-declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@";
+declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\[\]\^";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:primaryKeyName := 'id';
@@ -33,6 +33,17 @@ declare function local:fold-left($array as array(*), $acc, $fn as function(*), $
 };
 :)
 
+declare function local:for-each($a,$f){
+	local:for-each($a,$f,(),count($a) + 1)
+};
+
+declare function local:for-each($a,$f,$r,$t){
+	if(exists($a)) then
+		local:for-each(tail($a),$f,($r,$f(head($a),$t - count($a))),$t)
+	else
+		$r
+};
+
 declare function raddle:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
 };
@@ -41,38 +52,26 @@ declare function raddle:parse($query as xs:string) {
 	raddle:parse($query, ())
 };
 
-declare function raddle:get-index($rest,$ret){
-	let $close :=
-		for $i in 1 to count($rest) return 
-			if($rest[$i]/fn:group[@nr=1]/text()) then
-				$i
-			else
-				()
-	let $open :=
-		for $i in 1 to count($rest) return 
-			if($rest[$i]/fn:group[@nr=4]/text()) then
-				$i
-			else
-				()
-	let $l := count($close)
-	return
-		if(empty($ret) and $l > 0) then
-			let $ret :=
-				for $i in 1 to $l return
-					if($open[$i] < $close[$i]) then
-						()
-					else
-						$close[$i]
-			return raddle:get-index(tail($rest),$ret)
+declare function local:get-index-with($tok) {
+	for $i in 1 to count(index-of($tok,1)) return
+	if(exists(index-of($tok,-1)[$i]) and index-of($tok,-1)[$i] < index-of($tok,1)[$i]) then
+		()
+	else index-of($tok,1)[$i]+1
+};
+
+declare function raddle:get-index($rest){
+	local:get-index-with(for-each(tail($rest),function($_){
+		if($_/fn:group[@nr=1]) then
+			1
+		else if($_/fn:group[@nr=4]) then
+			-1
 		else
-			$ret
+			0
+	}))[1]
 };
 
-declare function raddle:wrap($analysis,$strings,$ret){
-	raddle:wrap($analysis,$strings,$ret,"")
-};
 
-declare function raddle:ret-from-group($next,$group,$strings,$ret){
+declare function raddle:ret-from-group($next,$group,$strings,$ret,$suffix){
 	if($group[@nr=4]) then
 		if($group[@nr=3]) then
 			let $val :=
@@ -80,7 +79,7 @@ declare function raddle:ret-from-group($next,$group,$strings,$ret){
 					$strings[number(replace($group[@nr=3],"\$s",""))]/string()
 				else
 					$group[@nr=3]/string()
-			return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[])})
+			return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[]), "suffix" := $suffix})
 		else
 			array:append($ret,raddle:wrap($next,$strings,[]))
 	else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
@@ -96,28 +95,15 @@ declare function raddle:ret-from-group($next,$group,$strings,$ret){
 
 declare function raddle:wrap-with-index($rest,$index,$group,$strings,$ret){
 	raddle:wrap(if($group[@nr=4]) then subsequence($rest,$index) else $rest,$strings,
-		raddle:ret-from-group(subsequence($rest,1,$index),$group,$strings,$ret),if($group[@nr=1]) then replace($group[@nr=1],"\)","") else "")
+		raddle:ret-from-group(subsequence($rest,1,$index),$group,$strings,$ret,if($group[@nr=4]) then replace($rest[$index - 1],"\)","") else ""))
 };
 
-declare function raddle:wrap($analysis,$strings,$ret,$suffix){
+declare function raddle:wrap($analysis,$strings,$ret){
 	let $group := head($analysis)/fn:group
 	let $rest := tail($analysis)
-	let $ret :=
-		if($group[@nr=1] and $suffix ne "" and array:size($ret)>0) then
-			let $retr := array:reverse($ret)
-			let $body := array:reverse(array:tail($retr))
-			let $last := array:head($retr)
-			let $last := if($last instance of map(xs:string,item()*)) then
-				raddle:map-put($last,"suffix",$suffix)
-			else
-				$last
-			return
-				array:append($body,$last)
-		else
-			$ret
 	return
 		if(exists($rest)) then
-			raddle:wrap-with-index($rest,if($group[@nr=4]) then raddle:get-index($rest,())[1] else 0,$group,$strings,$ret)
+			raddle:wrap-with-index($rest,if($group[@nr=4]) then raddle:get-index($analysis) else 0,$group,$strings,$ret)
 		else
 			$ret
 };
@@ -384,7 +370,7 @@ declare function raddle:convert($string){
 		let $number := number($string)
 		return
 			if(string($number) = 'NaN') then
-				"&quot;" || $string || "&quot;"
+				"&quot;" || util:unescape-uri($string,"UTF-8") || "&quot;"
 			else
 				$number
 };
