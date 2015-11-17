@@ -52,15 +52,16 @@ declare function raddle:parse($query as xs:string) {
 	raddle:parse($query, ())
 };
 
-declare function local:get-index-with($tok) {
+declare function raddle:get-index-from-tokens($tok) {
 	for $i in 1 to count(index-of($tok,1)) return
-	if(exists(index-of($tok,-1)[$i]) and index-of($tok,-1)[$i] < index-of($tok,1)[$i]) then
-		()
-	else index-of($tok,1)[$i]+1
+		if(exists(index-of($tok,-1)[$i]) and index-of($tok,-1)[$i] < index-of($tok,1)[$i]) then
+			()
+		else
+			index-of($tok,1)[$i]+1
 };
 
 declare function raddle:get-index($rest){
-	local:get-index-with(for-each(tail($rest),function($_){
+	raddle:get-index-from-tokens(for-each(tail($rest),function($_){
 		if($_/fn:group[@nr=1]) then
 			1
 		else if($_/fn:group[@nr=4]) then
@@ -71,31 +72,30 @@ declare function raddle:get-index($rest){
 };
 
 
-declare function raddle:ret-from-group($next,$group,$strings,$ret,$suffix){
-	if($group[@nr=4]) then
-		if($group[@nr=3]) then
-			let $val :=
-				if(matches($group[@nr=3],"\$s")) then
-					$strings[number(replace($group[@nr=3],"\$s",""))]/string()
-				else
-					$group[@nr=3]/string()
-			return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[]), "suffix" := $suffix})
-		else
-			array:append($ret,raddle:wrap($next,$strings,[]))
-	else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
+declare function raddle:append-or-nest($next,$group,$strings,$ret,$suffix){
+	if($group[@nr=3]) then
 		let $val :=
 			if(matches($group[@nr=3],"\$s")) then
 				$strings[number(replace($group[@nr=3],"\$s",""))]/string()
 			else
 				$group[@nr=3]/string()
-		return array:append($ret,$val)
+		return array:append($ret,map { "name" := $val, "args" := raddle:wrap($next,$strings,[]), "suffix" := $suffix})
 	else
-		$ret
+		array:append($ret,raddle:wrap($next,$strings,[]))
 };
 
-declare function raddle:wrap-with-index($rest,$index,$group,$strings,$ret){
-	raddle:wrap(if($group[@nr=4]) then subsequence($rest,$index) else $rest,$strings,
-		raddle:ret-from-group(subsequence($rest,1,$index),$group,$strings,$ret,if($group[@nr=4]) then replace($rest[$index - 1],"\)","") else ""))
+declare function raddle:append-prop-or-value($group,$strings,$ret) {
+	let $val :=
+		if(matches($group[@nr=3],"\$s")) then
+			$strings[number(replace($group[@nr=3],"\$s",""))]/string()
+		else
+			$group[@nr=3]/string()
+	return array:append($ret,$val)
+};
+
+declare function raddle:wrap-open-paren($rest,$index,$group,$strings,$ret){
+	raddle:wrap(subsequence($rest,$index),$strings,
+		raddle:append-or-nest(subsequence($rest,1,$index),$group,$strings,$ret,replace($rest[$index - 1],"\)","")))
 };
 
 declare function raddle:wrap($analysis,$strings,$ret){
@@ -103,7 +103,12 @@ declare function raddle:wrap($analysis,$strings,$ret){
 	let $rest := tail($analysis)
 	return
 		if(exists($rest)) then
-			raddle:wrap-with-index($rest,if($group[@nr=4]) then raddle:get-index($analysis) else 0,$group,$strings,$ret)
+			if($group[@nr=4]) then
+				raddle:wrap-open-paren($rest,raddle:get-index($analysis),$group,$strings,$ret)
+			else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
+				raddle:wrap($rest,$strings,raddle:append-prop-or-value($group,$strings,$ret))
+			else
+				raddle:wrap($rest,$strings,$ret)
 		else
 			$ret
 };
