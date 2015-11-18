@@ -18,6 +18,20 @@ declare variable $raddle:operatorMap := map {
 	"!=" := "ne"
 };
 
+declare variable $raddle:type-map := map {
+	"any" := "xs:anyAtomicType",
+	"element" := "element()",
+	"item" := "item()",
+	"array" := "array(item()?)",
+	"map" := "map(xs:string,item()?)",
+	"string" := "xs:string",
+	"int" := "xs:int",
+	"integer" := "xs:integer",
+	"boolean" := "xs:boolean",
+	"decimal" := "xs:decimal",
+	"float" := "xs:float"
+};
+
 (: 
 declare function local:fold-left($array as array(*), $acc, $fn as function(*)) {
 	local:fold-left($array, $acc, $fn, array:size($array))
@@ -380,20 +394,6 @@ declare function raddle:convert($string){
 				$number
 };
 
-declare variable $raddle:type-map := map {
-	"any" := "xs:anyAtomicType",
-	"element" := "element()",
-	"item" := "item()",
-	"array" := "array(item()?)",
-	"map" := "map(xs:string,item()?)",
-	"string" := "xs:string",
-	"int" := "xs:int",
-	"integer" := "xs:integer",
-	"boolean" := "xs:boolean",
-	"decimal" := "xs:decimal",
-	"float" := "xs:float"
-};
-
 declare function raddle:import-module($name,$params){
 	let $mappath :=
 		if(map:contains($params,"modules")) then
@@ -498,6 +498,13 @@ declare function raddle:process($value,$params){
 		array:filter($value,function($arg){
 			$arg("name")="use"
 		})
+	let $dict := 
+		map:new(($params("dict"),
+			for $i in 1 to array:size($use) return
+				raddle:use($use($i),$params)
+		))
+	(: update params dict! :)
+	let $params := map:new(($params,map:entry("dict",$dict)))
 	let $declare := 
 		array:filter($value,function($arg){
 			$arg("name")=("declare","define")
@@ -510,16 +517,13 @@ declare function raddle:process($value,$params){
 				$arg
 		})
 	let $dict := 
-		map:new(($params("dict"),
-			for $i in 1 to array:size($use) return
-				raddle:use($use($i),$params)
-		))
-	let $dict := 
 		map:new(($dict,
 			for $i in 1 to array:size($declare)
 				let $def := raddle:declare($declare($i),$params)
 				return map:entry($def("qname"),$def)
 		))
+	(: update params dict! :)
+	let $params := map:new(($params,map:entry("dict",$dict)))
 	let $func :=
 		if(array:size($compile)>0) then
 			raddle:compile($compile(1),(),(),map:new(($params,map { "top" := true() })))
@@ -575,6 +579,15 @@ declare function raddle:create-module($dict,$params,$top){
 							()
 			else
 				()
+	let $vars :=
+		for $key in map:keys($dict) return
+			if(matches($key,"^\$.*")) then
+				$dict($key)
+			else
+				()
+	let $variable :=
+		for $var in $vars return
+			"declare variable " || $var("qname") || " as " || raddle:map-type($var("type")) || (if($var("value")) then " := " || raddle:serialize($var("value"),$params) else "") || ";"
 	let $local := 
 		for $key in map:keys($dict) return
 			if((exists($module) and starts-with($key,$module("prefix") || ":")) or matches($key,"^local:")) then
@@ -600,7 +613,12 @@ declare function raddle:create-module($dict,$params,$top){
 			(if($top) then "declare" else "module") || " namespace " || $module("prefix") || "=&quot;" || $module("uri") || "&quot;;&#xa;"
 		else
 			()
-	return "xquery version &quot;3.1&quot;;&#xa;" || $moduledef || string-join(($import,$local,$anon),"&#xa;")
+	let $defaultdef :=
+		if($default ne "fn") then
+			"declare default function namespace &quot;" || $map[@prefix=$default]/@uri || "&quot;;&#xa;"
+		else
+			""
+	return "xquery version &quot;3.1&quot;;&#xa;" || $defaultdef || $moduledef || string-join(($variable,$import,$local,$anon),"&#xa;")
 };
 
 declare function raddle:insert-module($dict,$params){
@@ -637,14 +655,17 @@ declare function raddle:is-fn-seq($value) {
 		let $type := distinct-values(array:flatten(
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?)) then
-					true()
+					if(contains(array:flatten($_("args")),".")) then
+						true()
+					else
+						()
 				else
-					false()
+					()
 			})
 		))
 		return
 			if(count($type)>1) then
-				error(xs:QName("raddle:sequenceTypeError"), "Mixing sequence types is not allowed" || $type)
+				false()
 			else
 				$type
 };
@@ -705,6 +726,13 @@ declare function raddle:compose-helper($value,$result,$argslen,$total){
 };
 :)
 
+declare function raddle:map-type($stype) {
+	if(map:contains($raddle:type-map,$stype)) then
+		replace($stype,$stype,map:get($raddle:type-map,$stype))
+	else
+		$stype
+};
+
 declare function raddle:compile($value,$parent,$compose,$params){
 	let $top := $params("top")
 	let $params := map:remove($params,"top")
@@ -751,10 +779,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 					else
 						let $stype := replace($type,"[" || $raddle:suffix || "]?$","")
 						return
-							(if(map:contains($raddle:type-map,$stype)) then
-								replace($stype,$stype,map:get($raddle:type-map,$stype))
-							else
-								$stype) || replace($type,"^[^" || $raddle:suffix || "]*","")
+							raddle:map-type($stype) || replace($type,"^[^" || $raddle:suffix || "]*","")
 				return "$arg" || $i || " as " || $xsd
 			),",")
 		else
@@ -808,8 +833,29 @@ declare function raddle:declare($value,$params){
 	let $type := array:head($value("args"))
 	let $args := array:tail($value("args"))
 	return switch ($type)
-		case "namespace" return ()
+		case "namespace" return raddle:namespace($args,$params)
+		case "variable" return raddle:variable($args,$params)
 		default return raddle:define(map{"args":=$args},$params)
+};
+
+declare function raddle:namespace($args,$params) {
+	map {
+		"uri" := $args(2),
+		"prefix" := $args(1)
+	}
+};
+
+declare function raddle:variable($args,$params) {
+	let $l := array:size($args)
+	return map {
+		"qname" := $args(1),
+		"type" := $args(2),
+		"value" :=
+			if($l>2) then
+				$args(3)
+			else
+				()
+	}
 };
 
 declare function raddle:define($value,$params){
@@ -822,9 +868,23 @@ declare function raddle:define($value,$params){
 			"fn"
 	let $def :=
 		if($l=2) then
-			let $def := $params("dict")($name)
-			let $arity := array:size($def("args"))
-			return map:new(($def,map:entry("qname",$name || "#" || $arity)))
+			let $prefix :=
+				if(map:contains($params,"use")) then
+					$params("use")("parent")
+				else if(map:contains($params,"module")) then
+					$params("module")("prefix")
+				else
+					()
+			let $qname :=
+				if(contains($name,":")) then
+					$name
+				else
+					if($prefix) then
+						$prefix || ":" || $name
+					else
+						$name (: error? :)
+			let $def := $params("dict")($value("args")(2))
+			return map:new(($def,map:entry("qname",$qname)))
 		else
 			let $args := $value("args")(2)
 			let $arity := array:size($args)
