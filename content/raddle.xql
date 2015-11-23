@@ -3,20 +3,21 @@ xquery version "3.1";
 module namespace raddle="http://lagua.nl/lib/raddle";
 
 declare variable $raddle:suffix := "\+\*\-\?";
-declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\[\]\^";
+declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\^";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
 declare variable $raddle:operatorMap := map {
-	"=" := "eq",
+	"=" := "is",
 	"==" := "eq",
 	">" := "gt",
 	">=" := "ge",
 	"<" := "lt",
 	"<=" := "le",
-	"!=" := "ne"
+	"!=" := "isnot",
+	"!==" := "ne"
 };
 
 declare variable $raddle:type-map := map {
@@ -32,6 +33,16 @@ declare variable $raddle:type-map := map {
 	"decimal" := "xs:decimal",
 	"float" := "xs:float"
 };
+
+declare variable $raddle:auto-converted := map {
+	"true" := "true()",
+	"false" := "false()",
+	"null" := "()",
+	"undefined" := "()",
+	"Infinity" := "1 div 0e0",
+	"-Infinity" := "-1 div 0e0"
+};
+
 
 declare function raddle:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
@@ -51,7 +62,7 @@ declare function raddle:get-index-from-tokens($tok) {
 };
 
 declare function raddle:get-index($rest){
-	raddle:get-index-from-tokens(for-each(tail($rest),function($_){
+	raddle:get-index-from-tokens(for-each($rest,function($_){
 		if($_/fn:group[@nr=1]) then
 			1
 		else if($_/fn:group[@nr=4]) then
@@ -78,29 +89,248 @@ declare function raddle:wrap-open-paren($rest,$index,$group,$ret){
 		raddle:append-or-nest(subsequence($rest,1,$index),$group,$ret,replace($rest[$index - 1],"\)","")))
 };
 
-declare function raddle:wrap($match,$ret,$group){
-	if(exists(tail($match))) then
+declare function raddle:wrap($rest,$ret,$group){
+	if(exists($rest)) then
 		if($group[@nr=4]) then
-			raddle:wrap-open-paren(tail($match),raddle:get-index($match),$group,$ret)
+			raddle:wrap-open-paren($rest,raddle:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
-			raddle:wrap(tail($match),raddle:append-prop-or-value($group,$ret))
+			raddle:wrap($rest,raddle:append-prop-or-value($group,$ret))
 		else
-			raddle:wrap(tail($match),$ret)
+			raddle:wrap($rest,$ret)
 	else
 		$ret
 };
 
 declare function raddle:wrap($match,$ret){
-	raddle:wrap($match,$ret,head($match)/fn:group)
+	raddle:wrap(tail($match),$ret,head($match)/fn:group)
 };
 
-declare variable $raddle:auto-converted := map {
-	"true" := "true()",
-	"false" := "false()",
-	"null" := "()",
-	"undefined" := "()",
-	"Infinity" := "1 div 0e0",
-	"-Infinity" := "-1 div 0e0"
+
+declare function raddle:no-conjunction($seq,$hasopen) {
+	if($seq[1]/text() eq ")") then
+		if($hasopen) then
+			raddle:no-conjunction(subsequence($seq,2,count($seq)),false())
+		else
+			$seq[1]
+	else if($seq[1]/text() = ("&amp;", "|")) then
+		false()
+	else if($seq[1]/text() eq "(") then
+		raddle:no-conjunction(subsequence($seq,2,count($seq)),true())
+	else
+		false()
+};
+
+declare function raddle:set-conjunction($query as xs:string) {
+	let $parts := analyze-string($query,"(\()|(&amp;)|(\|)|(\))")/*
+	let $groups := 
+		for $i in 1 to count($parts) return
+			if(name($parts[$i]) eq "non-match") then
+				element group {
+					$parts[$i]/text()
+				}
+			else
+			let $p := $parts[$i]/fn:group/text()
+			return
+				if($p eq "(") then
+						element group {
+							attribute i {$i},
+							$p
+						}
+				else if($p eq "|") then
+						element group {
+							attribute i {$i},
+							$p
+						}
+				else if($p eq "&amp;") then
+						element group {
+							attribute i {$i},
+							$p
+						}
+				else if($p eq ")") then
+						element group {
+							attribute i {$i},
+							$p
+						}
+				else
+					()
+	let $cnt := count($groups)
+	let $remove :=
+		for $n in 1 to $cnt return
+			let $p := $groups[$n]
+			return
+				if($p/@i and $p/text() eq "(") then
+					let $close := raddle:no-conjunction(subsequence($groups,$n+1,$cnt)[@i],false())
+					return 
+						if($close) then
+							(string($p/@i),string($close/@i))
+						else
+							()
+				else
+					()
+	let $groups :=
+		for $x in $groups return
+			if($x/@i = $remove) then
+				element group {$x/text()}
+			else
+				$x
+	let $groups :=
+		for $n in 1 to $cnt return
+			let $x := $groups[$n]
+			return
+				if($x/@i and $x/text() eq "(") then
+					let $conjclose :=
+						for $y in subsequence($groups,$n+1,$cnt) return
+							if($y/@i and $y/text() = ("&amp;","|",")")) then
+								$y
+							else
+								()
+					let $t := $conjclose[text() = ("&amp;","|")][1]
+					let $conj :=
+						if($t/text() eq "|") then
+							"or"
+						else
+							"and"
+					let $close := $conjclose[text() eq ")"][1]/@i
+					return
+						element group {
+							attribute c {$t/@i},
+							attribute e {$close},
+							concat($conj,"(")
+						}
+				else if($x/text() = ("&amp;","|")) then
+					element group {
+						attribute i {$x/@i},
+						attribute e {10e10},
+						attribute t {
+							if($x/text() eq "|") then
+								"or"
+							else
+								"and"
+						},
+						","
+					}
+				else
+					$x
+	let $groups :=
+		for $n in 1 to $cnt return
+			let $x := $groups[$n]
+			return
+				if($x/@i and not($x/@c) and $x/text() ne ")") then
+					let $seq := subsequence($groups,1,$n - 1)
+					let $open := $seq[@c eq $x/@i]
+					return
+						if($open) then
+							element group {
+								attribute s {$x/@i},
+								attribute e {$open/@e},
+								","
+							}
+						else
+							$x
+				else
+					$x
+	let $groups :=
+		for $n in 1 to $cnt return
+			let $x := $groups[$n]
+			return
+				if($x/@i and not($x/@c) and $x/text() ne ")") then
+					let $seq := subsequence($groups,1,$n - 1)
+					let $open := $seq[@c eq $x/@i][last()]
+					let $prev := $seq[text() eq ","][last()]
+					let $prev := 
+							if($prev and $prev/@e < 10e10) then
+								$seq[@c = $prev/@s]/@c
+							else
+								$prev/@i
+					return
+						if($open) then
+							$x
+						else
+							element group {
+								attribute i {$x/@i},
+								attribute t {$x/@t},
+								attribute e {$x/@e},
+								attribute s {
+									if($prev) then
+										$prev
+									else
+										0
+								},
+								","
+							}
+				else
+					$x
+	let $groups :=
+			for $n in 1 to $cnt return
+				let $x := $groups[$n]
+				return
+					if($x/@i or $x/@c) then
+						let $start := $groups[@s eq $x/@i] | $groups[@s eq $x/@c]
+						return
+							if($start) then
+								element group {
+									$x/@*,
+									if($x/@c) then
+										concat($start/@t,"(",$x/text())
+									else
+										concat($x/text(),$start/@t,"(")
+								}
+							else
+								$x
+					else
+						$x
+	let $pre := 
+		if(count($groups[@s = 0]) > 0) then
+			concat($groups[@s = 0]/@t,"(")
+		else
+			""
+	let $post := 
+		for $x in $groups[@e = 10e10] return
+			")"
+	return concat($pre,string-join($groups,""),string-join($post,""))
+};
+
+
+declare function raddle:normalize-query($query as xs:string?){
+	let $query :=
+		if(not($query)) then
+			""
+		else
+			replace(replace($query,"&#10;|&#13;","")," ","%20")
+	let $query := replace($query,"%3A",":")
+	let $query := replace($query,"%2C",",")
+	let $query :=
+		if($raddle:jsonQueryCompatible) then
+			let $query := replace($query,"%3C=","=le=")
+			let $query := replace($query,"%3E=","=ge=")
+			let $query := replace($query,"%3C","=lt=")
+			let $query := replace($query,"%3E","=gt=")
+			return $query
+		else
+			$query
+	(: convert FIQL to normalized call syntax form :)
+	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
+	
+	let $analysis :=
+		for $x in $analysis/* return
+			if(name($x) eq "non-match") then
+				$x
+			else
+				let $property := $x/fn:group[@nr=1]/text()
+				let $operator := $x/fn:group[@nr=2]/text()
+				let $value := $x/fn:group[@nr=3]/text()
+				let $operator := 
+					if(string-length($operator) < 3) then
+						if(map:contains($raddle:operatorMap,$operator)) then
+							$raddle:operatorMap($operator)
+						else
+							(:throw new URIError("Illegal operator " + operator):)
+							()
+					else
+						substring($operator, 2, string-length($operator) - 2)
+				return concat($operator, "(" , $property , "," , $value , ")")
+	let $query := string-join($analysis,"")
+	return raddle:set-conjunction($query)
 };
 
 declare function raddle:convert($string){
@@ -401,8 +631,7 @@ declare function raddle:is-fn-seq($value) {
 declare function raddle:serialize($value,$params){
 	if($value instance of map(xs:string, item()?)) then
 		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
-	else
-	if($value instance of array(item()?)) then
+	else if($value instance of array(item()?)) then
 		"(" || string-join(array:flatten(array:for-each($value,function($val){
 			if(exists($params)) then
 				raddle:compile($val,(),(),$params)
@@ -415,44 +644,6 @@ declare function raddle:serialize($value,$params){
 		else
 			$value
 };
-
-(:
-declare function raddle:update-array($arr,$i,$val){
-	let $arr := array:remove($arr,$i)
-	return array:insert-before($arr,$i,$val)
-};
-
-declare function raddle:index-of($arr,$v){
-	index-of(array:for-each($arr, function($_){
-		if($_ = $v) then
-			1
-		else
-			0
-	}),1)
-};
-declare function raddle:compose($value){
-	raddle:compose-helper($value, "", 0, array:size($value))
-};
-
-declare function raddle:compose-helper($value,$result,$argslen,$total){
-	let $len := array:size($value)
-	let $head := array:head($value)
-	let $tail := array:tail($value)
-	let $n := if($total=$len) then 0 else 1
-	let $p := tokenize($head,"#")
-	let $fn := $p[1]
-	let $arity := xs:integer($p[2]) - $n
-	let $a := for $i in 1 to $arity return "$arg" || ($i+$argslen)
-	let $result := $fn || "(" || $result || (if($n=1 and $arity>0) then "," else "") || string-join($a,",") || ")"
-	return
-		if($len=1) then
-			let $f := for $i in 1 to $total return "$f" || $i
-			let $a := for $i in 1 to $arity+$argslen return "$arg" || $i
-			return "function(" || string-join($a,",") || "){" || $result || "}"
-		else
-			raddle:compose-helper($tail,$result,$arity+$argslen, $total)
-};
-:)
 
 declare function raddle:map-type($stype) {
 	if(map:contains($raddle:type-map,$stype)) then
@@ -512,12 +703,14 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			),",")
 		else
 			"$arg0"
+	(:
 	let $fname :=
 		if(exists($parent)) then
-(:			let $parity := if($parent("more")) then "N" else array:size($parent("args")):)
+			let $parity := if($parent("more")) then "N" else array:size($parent("args"))
 			$parent("qname")
 		else
 			"anon"
+	:)
 	return
 		if($isSeq) then
 			if($fn-seq) then
@@ -545,7 +738,14 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						raddle:convert($_)
 				})
 			return
-				if($compose) then
+				if($qname eq "") then
+					(: if qname empty, apply previous anonymous function with these args :)
+					(: TODO if arg is int and qname atomic value, retrieve N from sequence :)
+					"(" || string-join(array:flatten($args),",") || ")"
+				else if(matches($qname,"^[$\.]")) then
+					(: if qname is argument, variable or dot, apply with args or context function :)
+					"CC(" || string-join(array:flatten($args),",") || ")"
+				else if($compose) then
 					array:insert-before($args,1,$qname)
 				else
 					(: TODO detect exec :)
