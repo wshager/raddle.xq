@@ -3,7 +3,7 @@ xquery version "3.1";
 module namespace raddle="http://lagua.nl/lib/raddle";
 
 declare variable $raddle:suffix := "\+\*\-\?";
-declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\^";
+declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\^\[\]";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
@@ -48,8 +48,21 @@ declare function raddle:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
 };
 
-declare function raddle:parse($query as xs:string?) {
-	raddle:wrap(analyze-string(replace(replace($query,"&#10;|&#13;","")," ","%20"), $raddle:leftoverRegExp)/fn:match,[])
+declare function raddle:parse-strings($strings as element()*) {
+	raddle:wrap(analyze-string(string-join(for-each(1 to count($strings),function($i){
+		if(name($strings[$i]) eq "match") then
+			"$%" || $i
+		else
+			$strings[$i]/string()
+	})),$raddle:leftoverRegExp)/fn:match,$strings,[])
+};
+
+declare function raddle:parse($query as xs:string?){
+	raddle:parse($query,map {})
+};
+
+declare function raddle:parse($query as xs:string?,$params) {
+	raddle:parse-strings(analyze-string(raddle:normalize-query(replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20"),$params),"'[^']*'")/*)
 };
 
 declare function raddle:get-index-from-tokens($tok) {
@@ -72,37 +85,48 @@ declare function raddle:get-index($rest){
 	}))[1]
 };
 
+declare function raddle:clip-string($str as xs:string) {
+	substring($str,2,string-length($str)-2)
+};
 
-declare function raddle:append-or-nest($next,$group,$ret,$suffix){
-	if($group[@nr=3]) then
-		array:append($ret,map { "name" := $group[@nr=3]/string(), "args" := raddle:wrap($next,[]), "suffix" := $suffix})
+declare function raddle:value-from-strings($val as xs:string,$strings) {
+	(: TODO replace :)
+	if(matches($val,"\$%[0-9]+")) then
+		raddle:clip-string($strings[number(replace($val,"\$%([0-9]+)","$1"))])
 	else
-		array:append($ret,raddle:wrap($next,[]))
+		$val
 };
 
-declare function raddle:append-prop-or-value($group,$ret) {
-	array:append($ret,$group[@nr=3]/string())
+declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
+	if($group[@nr=3]) then
+		array:append($ret,map { "name" := raddle:value-from-strings($group[@nr=3]/string(),$strings), "args" := raddle:wrap($next,$strings,[]), "suffix" := $suffix})
+	else
+		array:append($ret,raddle:wrap($next,$strings,[]))
 };
 
-declare function raddle:wrap-open-paren($rest,$index,$group,$ret){
-	raddle:wrap(subsequence($rest,$index),
-		raddle:append-or-nest(subsequence($rest,1,$index),$group,$ret,replace($rest[$index - 1],"\)","")))
+declare function raddle:append-prop-or-value($group,$strings,$ret) {
+	array:append($ret,raddle:value-from-strings($group[@nr=3]/string(),$strings))
 };
 
-declare function raddle:wrap($rest,$ret,$group){
+declare function raddle:wrap-open-paren($rest,$strings,$index,$group,$ret){
+	raddle:wrap(subsequence($rest,$index),$strings,
+		raddle:append-or-nest(subsequence($rest,1,$index),$strings,$group,$ret,replace($rest[$index - 1],"\)","")))
+};
+
+declare function raddle:wrap($rest,$strings,$ret,$group){
 	if(exists($rest)) then
 		if($group[@nr=4]) then
-			raddle:wrap-open-paren($rest,raddle:get-index($rest),$group,$ret)
+			raddle:wrap-open-paren($rest,$strings,raddle:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
-			raddle:wrap($rest,raddle:append-prop-or-value($group,$ret))
+			raddle:wrap($rest,$strings,raddle:append-prop-or-value($group,$strings,$ret))
 		else
-			raddle:wrap($rest,$ret)
+			raddle:wrap($rest,$strings,$ret)
 	else
 		$ret
 };
 
-declare function raddle:wrap($match,$ret){
-	raddle:wrap(tail($match),$ret,head($match)/fn:group)
+declare function raddle:wrap($match,$strings,$ret){
+	raddle:wrap(tail($match),$strings,$ret,head($match)/fn:group)
 };
 
 
@@ -291,12 +315,20 @@ declare function raddle:set-conjunction($query as xs:string) {
 };
 
 
-declare function raddle:normalize-query($query as xs:string?){
-	let $query :=
-		if(not($query)) then
-			""
+declare function raddle:normalize-query($query as xs:string?,$params) {
+	raddle:normalize-filters(analyze-string($query,"\[[^\[\]]*\]")/*,$params)
+};
+
+declare function raddle:normalize-filters($filters as element()*,$params) {
+	string-join(for-each(1 to count($filters),function($i){
+		if(name($filters[$i]) eq "match") then
+			raddle:normalize-filter(raddle:clip-string($filters[$i]),$params)
 		else
-			replace(replace($query,"&#10;|&#13;","")," ","%20")
+			$filters[$i]/string()
+	}))
+};
+
+declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%3A",":")
 	let $query := replace($query,"%2C",",")
 	let $query :=
@@ -327,17 +359,15 @@ declare function raddle:normalize-query($query as xs:string?){
 							(:throw new URIError("Illegal operator " + operator):)
 							()
 					else
-						substring($operator, 2, string-length($operator) - 2)
+						raddle:clip-string($operator)
 				return concat($operator, "(" , $property , "," , $value , ")")
 	let $query := string-join($analysis,"")
 	return raddle:set-conjunction($query)
 };
 
 declare function raddle:convert($string){
-	if(matches($string,"^(\$.*)|([^#]*#[0-9]+)$")) then
+	if(matches($string,"^(\$.*)|([^#]+#[0-9]+)$")) then
 		$string
-	else if(matches($string,"'[^']*'")) then
-		"&quot;" || substring(util:unescape-uri($string,"UTF-8"),2,string-length($string)-2) || "&quot;"
 	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
 	else
@@ -418,7 +448,7 @@ declare function raddle:use($value,$params){
 			array:for-each($value("args"),function($_){
 				let $uri := raddle:create-uri($_,$params)
 				let $src := util:binary-to-string(util:binary-doc($uri("location")))
-				let $parsed := raddle:parse($src)
+				let $parsed := raddle:parse($src,$params)
 				return raddle:process($parsed,raddle:map-put($params,"use",$uri))
 			})
 		)
@@ -730,6 +760,9 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						raddle:compile($_,(),(),$params)
 					else if($_ instance of map(xs:string, item()?)) then
 						raddle:compile($_,(),(),$params)
+(:					else if(matches(string($_),"/")) then:)
+						(: rewrite select path to arg sequence :)
+(:						raddle:select(string($_),$params):)
 					else if(string($_) = ".") then
 						"$arg0"
 					else if(matches(string($_),"^\$[0-9]+$")) then
@@ -744,7 +777,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 					"(" || string-join(array:flatten($args),",") || ")"
 				else if(matches($qname,"^[$\.]")) then
 					(: if qname is argument, variable or dot, apply with args or context function :)
-					"CC(" || string-join(array:flatten($args),",") || ")"
+					$qname || "(" || string-join(array:flatten($args),",") || ")"
 				else if($compose) then
 					array:insert-before($args,1,$qname)
 				else
@@ -861,7 +894,7 @@ declare function raddle:define($value,$params){
 };
 
 declare function raddle:transpile($str,$params) {
-	let $value := raddle:parse($str)
+	let $value := raddle:parse($str,$params)
 	let $dict := raddle:process($value,$params)
 	return
 		if(map:contains($dict,"anon:top#1")) then
