@@ -3,10 +3,20 @@ xquery version "3.1";
 module namespace raddle="http://lagua.nl/lib/raddle";
 
 declare variable $raddle:suffix := "\+\*\-\?";
-declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\^\[\]";
-declare variable $raddle:filterRegexp := "(?:\)|\]|\$[^\)\(\]\[,])?\[([^\[\]]*)\]";
-declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w\:-]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
-declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
+declare variable $raddle:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
+declare variable $raddle:qname := "[" || $raddle:ncname || "]*:?" || "[" || $raddle:ncname || "]+";
+declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\._\/#@\^\[\]";
+declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([^\[\]]*)\]";
+(:
+  TODO wrap brackets, check if matches($group[@nr3],"(\]|\)|\$qname)$")
+  http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
+- http://www.w3.org/TR/REC-xml-names
+- http://stackoverflow.com/questions/1631396/what-is-an-xsncname-type-and-when-should-it-be-used
+- http://stackoverflow.com/questions/14891129/regular-expression-pl-and-pn
+:)
+(:declare variable $raddle:filterRegexp := "(\])|(,)?([^\[\]]*)(\[?)";:)
+declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
+declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
@@ -152,30 +162,15 @@ declare function raddle:set-conjunction($query as xs:string) {
 					$parts[$i]/text()
 				}
 			else
-			let $p := $parts[$i]/fn:group/text()
-			return
-				if($p eq "(") then
+				let $p := $parts[$i]/fn:group/text()
+				return
+					if($p = ("(","|","&amp;",")")) then
 						element group {
 							attribute i {$i},
 							$p
 						}
-				else if($p eq "|") then
-						element group {
-							attribute i {$i},
-							$p
-						}
-				else if($p eq "&amp;") then
-						element group {
-							attribute i {$i},
-							$p
-						}
-				else if($p eq ")") then
-						element group {
-							attribute i {$i},
-							$p
-						}
-				else
-					()
+					else
+						()
 	let $cnt := count($groups)
 	let $remove :=
 		for $n in 1 to $cnt return
@@ -321,12 +316,7 @@ declare function raddle:normalize-query($query as xs:string?,$params) {
 declare function raddle:normalize-filters($filters as element()*,$params) {
 	string-join(for-each(1 to count($filters),function($i){
 		if(name($filters[$i]) eq "match") then
-			string-join(for-each($filters[$i]/node(),function($_){
-				if($_[@nr=1]) then
-					"(filter(" || raddle:normalize-filter($_/string(),$params) || "))"
-				else
-					replace($_,"[\[\]]","")
-			}))
+			"(filter(" || $filters[$i]/node()[@nr=1] || "," || raddle:normalize-filter($filters[$i]/node()[@nr=2]/string(),$params) || "))"
 		else
 			$filters[$i]/string()
 	}))
@@ -348,7 +338,6 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%20+and%20+","&amp;")
 	let $query := replace($query,"%20+or%20+","|")
 	let $query := replace($query,"%20","=")
-(:	let $query := replace($query,"(position|last)\(\)","%$1"):)
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
 	
@@ -497,7 +486,7 @@ declare function raddle:process($value,$body,$params){
 	let $declare :=
 		array:for-each($declare,function($arg){
 			if($arg("name")="define") then
-				raddle:map-put($arg,"args",array:insert-before($arg("args"),1,"function"))
+				raddle:map-put($arg,"args",array:insert-before($arg("args"),1,if(matches($arg("args")(1),"^\$.*")) then "variable" else "function"))
 			else
 				$arg
 		})
@@ -578,7 +567,7 @@ declare function raddle:create-module($dict,$params,$top){
 				()
 	let $vars :=
 		for $key in map:keys($dict) return
-			if(matches($key,"^\$.*")) then
+			if(map:contains($dict($key),"value")) then
 				$dict($key)
 			else
 				()
