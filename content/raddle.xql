@@ -12,13 +12,11 @@ declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
 declare variable $raddle:operatorMap := map {
 	"=" := "is",
-	"==" := "eq",
 	">" := "gt",
 	">=" := "ge",
 	"<" := "lt",
 	"<=" := "le",
-	"!=" := "isnot",
-	"!==" := "ne"
+	"!=" := "isnot"
 };
 
 declare variable $raddle:type-map := map {
@@ -350,7 +348,6 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%20+and%20+","&amp;")
 	let $query := replace($query,"%20+or%20+","|")
 	let $query := replace($query,"%20","=")
-	let $query := replace($query,"(position|last)\(\)","%$1")
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
 	
