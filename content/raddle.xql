@@ -5,7 +5,7 @@ module namespace raddle="http://lagua.nl/lib/raddle";
 declare variable $raddle:suffix := "\+\*\-\?";
 declare variable $raddle:chars := $raddle:suffix || "\$:\w%\._\/#@\^\[\]";
 declare variable $raddle:filterRegexp := "(?:\)|\]|\$[^\)\(\]\[,])?\[([^\[\]]*)\]";
-declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
+declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w\:-]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\)[" || $raddle:suffix || "]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
@@ -322,10 +322,10 @@ declare function raddle:normalize-filters($filters as element()*,$params) {
 	string-join(for-each(1 to count($filters),function($i){
 		if(name($filters[$i]) eq "match") then
 			string-join(for-each($filters[$i]/node(),function($_){
-				if($_[@nr=1]) then
-					"(filter(" || raddle:normalize-filter($_/string(),$params) || "))"
-				else
-					replace($_,"[\[\]]","")
+			    if($_[@nr=1]) then
+			        "(filter(" || raddle:normalize-filter($_/string(),$params) || "))"
+			    else
+			        replace($_,"[\[\]]","")
 			}))
 		else
 			$filters[$i]/string()
@@ -348,6 +348,7 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%20+and%20+","&amp;")
 	let $query := replace($query,"%20+or%20+","|")
 	let $query := replace($query,"%20","=")
+(:	let $query := replace($query,"(position|last)\(\)","%$1"):)
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
 	
