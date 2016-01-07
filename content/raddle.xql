@@ -322,10 +322,10 @@ declare function raddle:normalize-filters($filters as element()*,$params) {
 	string-join(for-each(1 to count($filters),function($i){
 		if(name($filters[$i]) eq "match") then
 			string-join(for-each($filters[$i]/node(),function($_){
-			    if($_[@nr=1]) then
-			        "(filter(" || raddle:normalize-filter($_/string(),$params) || "))"
-			    else
-			        replace($_,"[\[\]]","")
+				if($_[@nr=1]) then
+					"(filter(" || raddle:normalize-filter($_/string(),$params) || "))"
+				else
+					replace($_,"[\[\]]","")
 			}))
 		else
 			$filters[$i]/string()
