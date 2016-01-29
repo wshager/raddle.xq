@@ -1,12 +1,13 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
+import module namespace console="http://exist-db.org/xquery/console";
 
 declare variable $raddle:suffix := "\+\*\-\?";
 declare variable $raddle:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
 declare variable $raddle:qname := "[" || $raddle:ncname || "]*:?" || "[" || $raddle:ncname || "]+";
-declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\._\/#@\^\[\]";
-declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([^\[\]]*)\]";
+declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\/#@\^";
+(:declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([^\[\]]*)\]";:)
 (:
   TODO wrap brackets, check if matches($group[@nr3],"(\]|\)|\$qname)$")
   http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
@@ -14,8 +15,9 @@ declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([
 - http://stackoverflow.com/questions/1631396/what-is-an-xsncname-type-and-when-should-it-be-used
 - http://stackoverflow.com/questions/14891129/regular-expression-pl-and-pn
 :)
-(:declare variable $raddle:filterRegexp := "(\])|(,)?([^\[\]]*)(\[?)";:)
-declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:chars,",]+\)|[",$raddle:chars,"]*|)");
+declare variable $raddle:allchars := "\p{L}\p{N}\-_\.\$:%\/#@\^\(\),";
+declare variable $raddle:filterRegexp := "(\])|(,)?([^\[\]]*)(\[?)";
+declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)");
 declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
@@ -26,7 +28,10 @@ declare variable $raddle:operatorMap := map {
 	">=" := "ge",
 	"<" := "lt",
 	"<=" := "le",
-	"!=" := "isnot"
+	"!=" := "isnot",
+	"+" := "add",
+	"-" := "subtract",
+	"*" := "mult"
 };
 
 declare variable $raddle:type-map := map {
@@ -63,7 +68,7 @@ declare function raddle:parse-strings($strings as element()*) {
 			"$%" || $i
 		else
 			$strings[$i]/string()
-	})),$raddle:leftoverRegExp)/fn:match,$strings,[])
+	})),$raddle:leftoverRegExp)/fn:match,$strings)
 };
 
 declare function raddle:parse($query as xs:string?){
@@ -108,9 +113,9 @@ declare function raddle:value-from-strings($val as xs:string,$strings) {
 
 declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
 	if($group[@nr=3]) then
-		array:append($ret,map { "name" := raddle:value-from-strings($group[@nr=3]/string(),$strings), "args" := raddle:wrap($next,$strings,[]), "suffix" := $suffix})
+		array:append($ret,map { "name" := raddle:value-from-strings($group[@nr=3]/string(),$strings), "args" := raddle:wrap($next,$strings), "suffix" := $suffix})
 	else
-		array:append($ret,raddle:wrap($next,$strings,[]))
+		array:append($ret,raddle:wrap($next,$strings))
 };
 
 declare function raddle:append-prop-or-value($group,$strings,$ret) {
@@ -138,6 +143,60 @@ declare function raddle:wrap($match,$strings,$ret){
 	raddle:wrap(tail($match),$strings,$ret,head($match)/fn:group)
 };
 
+declare function raddle:wrap($match,$strings){
+	raddle:wrap($match,$strings,[])
+};
+
+declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
+	raddle:wrap-square(subsequence($rest,$index),$params,
+		if($group[@nr=3]) then
+			(: empty string indicates there was a group before :)
+			if($group[@nr=3]/string()="") then
+				let $rev := array:reverse($ret)
+				let $prev := array:head($rev)
+				return array:append(array:reverse(array:tail($rev)),[$prev(1),"filter(" || $prev(2) || ")," || raddle:wrap-square(subsequence($rest,1,$index),$params),$prev(3)])
+			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
+				let $val := 
+					if($index=5) then
+						raddle:normalize-filter(string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params))),$params)
+					else
+						raddle:wrap-square(subsequence($rest,1,$index),$params)
+				return array:append($ret,[
+					replace($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$",""),
+					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","filter($2,") || $val,
+					")"
+				])
+			else
+				array:append($ret,[$group[@nr=3]/string(),"array(", raddle:wrap-square(subsequence($rest,1,$index),$params), ")"])
+		else
+			array:append($ret,raddle:wrap-square(subsequence($rest,1,$index),$params))
+	)
+};
+
+declare function raddle:wrap-square($rest,$params,$ret,$group){
+	if(exists($rest)) then
+		if($group[@nr=4]) then
+			raddle:wrap-open-square($rest,$params,raddle:get-index($rest),$group,$ret)
+		else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
+			raddle:wrap-square($rest,$params,array:append($ret,
+				if($group[@nr=3] and raddle:get-index($rest)=2) then
+					raddle:normalize-filter($group[@nr=3]/string(), $params)
+				else
+					$group[@nr=3]/string()
+			))
+		else
+			raddle:wrap-square($rest,$params,$ret)
+	else
+		$ret
+};
+
+declare function raddle:wrap-square($match,$params,$ret){
+	raddle:wrap-square(tail($match),$params,$ret,head($match)/fn:group)
+};
+
+declare function raddle:wrap-square($match,$params){
+	raddle:wrap-square($match,$params,[])
+};
 
 declare function raddle:no-conjunction($seq,$hasopen) {
 	if($seq[1]/text() eq ")") then
@@ -310,7 +369,7 @@ declare function raddle:set-conjunction($query as xs:string) {
 
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
-	raddle:normalize-filters(analyze-string($query,$raddle:filterRegexp)/*,$params)
+	string-join(array:flatten(raddle:wrap-square(analyze-string($query,$raddle:filterRegexp)/fn:match,$params)))
 };
 
 declare function raddle:normalize-filters($filters as element()*,$params) {
@@ -340,7 +399,7 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%20","=")
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
-	
+	let $null := console:log($analysis)
 	let $analysis :=
 		for $x in $analysis/* return
 			if(name($x) eq "non-match") then
