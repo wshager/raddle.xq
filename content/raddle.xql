@@ -1,7 +1,7 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
-import module namespace console="http://exist-db.org/xquery/console";
+(:import module namespace console="http://exist-db.org/xquery/console";:)
 
 declare variable $raddle:suffix := "\+\*\-\?";
 declare variable $raddle:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
@@ -154,7 +154,7 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 			if($group[@nr=3]/string()="") then
 				let $rev := array:reverse($ret)
 				let $prev := array:head($rev)
-				return array:append(array:reverse(array:tail($rev)),[$prev(1),"filter(" || $prev(2) || ")," || raddle:wrap-square(subsequence($rest,1,$index),$params),$prev(3)])
+				return array:append(array:reverse(array:tail($rev)),[$prev(1),"filter(" || $prev(2) || "),(" || raddle:wrap-square(subsequence($rest,1,$index),$params),$prev(3)||")"])
 			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
 				let $val := 
 					if($index=5) then
@@ -163,8 +163,8 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 						raddle:wrap-square(subsequence($rest,1,$index),$params)
 				return array:append($ret,[
 					replace($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$",""),
-					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","filter($2,") || $val,
-					")"
+					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","filter($2,(") || $val,
+					"))"
 				])
 			else
 				array:append($ret,[$group[@nr=3]/string(),"array(", raddle:wrap-square(subsequence($rest,1,$index),$params), ")"])
@@ -399,7 +399,6 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 	let $query := replace($query,"%20","=")
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
-	let $null := console:log($analysis)
 	let $analysis :=
 		for $x in $analysis/* return
 			if(name($x) eq "non-match") then
