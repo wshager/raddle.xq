@@ -6,19 +6,18 @@ module namespace raddle="http://lagua.nl/lib/raddle";
 declare variable $raddle:suffix := "\+\*\-\?";
 declare variable $raddle:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
 declare variable $raddle:qname := "[" || $raddle:ncname || "]*:?" || "[" || $raddle:ncname || "]+";
+declare variable $raddle:operators := "&amp;\|=<>!";
 declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\/#@\^";
-(:declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([^\[\]]*)\]";:)
 (:
-  TODO wrap brackets, check if matches($group[@nr3],"(\]|\)|\$qname)$")
-  http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
+- http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
 - http://www.w3.org/TR/REC-xml-names
 - http://stackoverflow.com/questions/1631396/what-is-an-xsncname-type-and-when-should-it-be-used
 - http://stackoverflow.com/questions/14891129/regular-expression-pl-and-pn
 :)
-declare variable $raddle:allchars := "\p{L}\p{N}\-_\.\$:%\/#@\^\(\),";
+declare variable $raddle:allchars := "\p{L}\p{N}\-_\.\$:%\/#@\^\(\)";
 declare variable $raddle:filterRegexp := "(\])|(,)?([^\[\]]*)(\[?)";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)");
-declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|([&amp;\|,])?([",$raddle:chars,"]*)(\(?)");
+declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|(,)?([",$raddle:chars || $raddle:operators,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
@@ -76,7 +75,7 @@ declare function raddle:parse($query as xs:string?){
 };
 
 declare function raddle:parse($query as xs:string?,$params) {
-	raddle:parse-strings(analyze-string(raddle:normalize-query(replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20"),$params),"'[^']*'")/*)
+	raddle:parse-strings(analyze-string(raddle:normalize-query($query,$params),"'[^']*'")/*)
 };
 
 declare function raddle:get-index-from-tokens($tok) {
@@ -367,21 +366,13 @@ declare function raddle:set-conjunction($query as xs:string) {
 	return concat($pre,string-join($groups,""),string-join($post,""))
 };
 
+declare function raddle:normalize-filter($query as xs:string?, $params as map(xs:string*,item()?)) {
+	$query
+};
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
-	string-join(array:flatten(raddle:wrap-square(analyze-string($query,$raddle:filterRegexp)/fn:match,$params)))
-};
-
-declare function raddle:normalize-filters($filters as element()*,$params) {
-	string-join(for-each(1 to count($filters),function($i){
-		if(name($filters[$i]) eq "match") then
-			"(filter(" || $filters[$i]/node()[@nr=1] || "," || raddle:normalize-filter($filters[$i]/node()[@nr=2]/string(),$params) || "))"
-		else
-			$filters[$i]/string()
-	}))
-};
-
-declare function raddle:normalize-filter($query as xs:string?,$params){
+	let $query := replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20")
+	let $query := string-join(array:flatten(raddle:wrap-square(analyze-string($query,$raddle:filterRegexp)/fn:match,$params)))
 	let $query := replace($query,"%3A",":")
 	let $query := replace($query,"%2C",",")
 	let $query :=
@@ -394,9 +385,16 @@ declare function raddle:normalize-filter($query as xs:string?,$params){
 		else
 			$query
 	(: convert xquery filter to FIQL :)
-	let $query := replace($query,"%20+and%20+","&amp;")
-	let $query := replace($query,"%20+or%20+","|")
+	let $query := replace($query,"%20+","%20")
+	let $query := replace($query,"%20and%20","&amp;")
+	let $query := replace($query,"%20or%20","|")
+	let $query := replace($query,"%20=%20","=")
+	let $query := replace($query,"%20!=%20","!=")
 	let $query := replace($query,"%20","=")
+	return raddle:to-op($query,$params)
+};
+
+declare function raddle:to-op($query,$params){
 	(: convert FIQL to normalized call syntax form :)
 	let $analysis := analyze-string($query,$raddle:normalizeRegExp)
 	let $analysis :=
@@ -699,10 +697,10 @@ declare function raddle:is-fn-seq($value) {
 		let $type := distinct-values(array:flatten(
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?)) then
-					if(contains(array:flatten($_("args")),".")) then
-						true()
-					else
-						()
+					(: only check strings in sequence :)
+					raddle:is-fn-seq($_("args"))
+				else if($_ instance of xs:string and $_ = ".") then
+					true()
 				else
 					()
 			})
