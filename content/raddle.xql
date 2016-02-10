@@ -64,7 +64,7 @@ declare function raddle:map-put($map,$key,$val){
 };
 
 declare function raddle:parse-strings($strings as element()*) {
-    raddle:wrap(analyze-string(string-join(for-each(1 to count($strings),function($i){
+	raddle:wrap(analyze-string(string-join(for-each(1 to count($strings),function($i){
 		if(name($strings[$i]) eq "match") then
 			"$%" || $i
 		else
@@ -163,21 +163,17 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 			if($group[@nr=3]/string()="") then
 				let $rev := array:reverse($ret)
 				let $prev := array:head($rev)
-				return array:append(array:reverse(array:tail($rev)),[$prev(1),"filter(" || $prev(2) || "),(" || raddle:wrap-square(subsequence($rest,1,$index),$params),$prev(3)||")"])
+				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || "[" || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
 			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
 				let $null := console:log(($index,$group))
-				let $val := 
-					if($index=5) then
-						raddle:normalize-filter(string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params))),$params)
-					else
-						raddle:wrap-square(subsequence($rest,1,$index),$params)
+				let $val :=
+						string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params)))
 				return array:append($ret,[
 					replace($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$",""),
-					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","filter($2,(") || $val,
-					"))"
+					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","$2[") || raddle:normalize-filter($val,$params)
 				])
 			else
-				array:append($ret,[$group[@nr=3]/string(),"array(", raddle:wrap-square(subsequence($rest,1,$index),$params), ")"])
+				array:append($ret,[$group[@nr=3]/string(),"array(" || raddle:wrap-square(subsequence($rest,1,$index),$params) || ")"])
 		else
 			array:append($ret,raddle:wrap-square(subsequence($rest,1,$index),$params))
 	)
@@ -189,10 +185,7 @@ declare function raddle:wrap-square($rest,$params,$ret,$group){
 			raddle:wrap-open-square($rest,$params,raddle:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
 			raddle:wrap-square($rest,$params,array:append($ret,
-				if($group[@nr=3] and raddle:get-index($rest)=2) then
-					raddle:normalize-filter($group[@nr=3]/string(), $params)
-				else
-					$group[@nr=3]/string()
+				$group[@nr=3]/string()
 			))
 		else
 			raddle:wrap-square($rest,$params,$ret)
@@ -224,7 +217,7 @@ declare function raddle:no-conjunction($seq,$hasopen) {
 
 declare function raddle:set-conjunction($query as xs:string) {
 	let $parts := analyze-string($query,"(\()|(&amp;)|(\|)|(\))")/*
-	let $groups := 
+	let $groups :=
 		for $i in 1 to count($parts) return
 			if(name($parts[$i]) eq "non-match") then
 				element group {
@@ -247,7 +240,7 @@ declare function raddle:set-conjunction($query as xs:string) {
 			return
 				if($p/@i and $p/text() eq "(") then
 					let $close := raddle:no-conjunction(subsequence($groups,$n+1,$cnt)[@i],false())
-					return 
+					return
 						if($close) then
 							(string($p/@i),string($close/@i))
 						else
@@ -324,7 +317,7 @@ declare function raddle:set-conjunction($query as xs:string) {
 					let $seq := subsequence($groups,1,$n - 1)
 					let $open := $seq[@c eq $x/@i][last()]
 					let $prev := $seq[text() eq ","][last()]
-					let $prev := 
+					let $prev :=
 							if($prev and $prev/@e < 10e10) then
 								$seq[@c = $prev/@s]/@c
 							else
@@ -366,19 +359,24 @@ declare function raddle:set-conjunction($query as xs:string) {
 								$x
 					else
 						$x
-	let $pre := 
+	let $pre :=
 		if(count($groups[@s = 0]) > 0) then
 			concat($groups[@s = 0]/@t,"(")
 		else
 			""
-	let $post := 
+	let $post :=
 		for $x in $groups[@e = 10e10] return
 			")"
 	return concat($pre,string-join($groups,""),string-join($post,""))
 };
 
 declare function raddle:normalize-filter($query as xs:string?, $params as map(xs:string*,item()?)) {
-	$query
+	let $query :=
+		if(matches($query,"^\p{N}+$")) then
+			"position(.)=$query"
+		else
+			$query
+	return "(" || $query || ")"
 };
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
@@ -449,7 +447,7 @@ declare function raddle:import-module($name,$params){
 	let $map := doc($mappath)/root/module
 	let $location := xs:anyURI($map[@name = $name]/@location)
 	let $uri := xs:anyURI($map[@name = $name]/@uri)
-	let $module := 
+	let $module :=
 		if($location) then
 			inspect:inspect-module($location)
 		else
@@ -519,11 +517,11 @@ declare function raddle:use($value,$params){
 };
 
 declare function raddle:process($value,$body,$params){
-	let $mod := 
+	let $mod :=
 		array:filter($value,function($arg){
 			$arg("name")="module"
 		})
-	let $module := 
+	let $module :=
 		if(array:size($mod)>0) then
 			raddle:module($mod(1),$params)
 		else
@@ -533,18 +531,18 @@ declare function raddle:process($value,$body,$params){
 			map:new(($params,map { "module" := $module}))
 		else
 			$params
-	let $use := 
+	let $use :=
 		array:filter($value,function($arg){
 			$arg("name")="use"
 		})
-	let $dict := 
+	let $dict :=
 		map:new(($params("dict"),
 			for $i in 1 to array:size($use) return
 				raddle:use($use($i),$params)
 		))
 	(: update params dict! :)
 	let $params := map:new(($params,map:entry("dict",$dict)))
-	let $declare := 
+	let $declare :=
 		array:filter($value,function($arg){
 			$arg("name")=("declare","define")
 		})
@@ -555,7 +553,7 @@ declare function raddle:process($value,$body,$params){
 			else
 				$arg
 		})
-	let $dict := 
+	let $dict :=
 		map:new(($dict,
 			for $i in 1 to array:size($declare)
 				let $def := raddle:declare($declare($i),$params)
@@ -616,7 +614,7 @@ declare function raddle:create-module($dict,$params,$top){
 				()
 			else
 				$dict($key)("prefix")
-	let $import := 
+	let $import :=
 		for $prefix in distinct-values($mods) return
 			if($prefix) then
 				let $entry := $map[@prefix = $prefix]
@@ -639,7 +637,7 @@ declare function raddle:create-module($dict,$params,$top){
 	let $variable :=
 		for $var in $vars return
 			"declare variable " || $var("qname") || " as " || raddle:map-type($var("type")) || (if($var("value")) then " := " || $var("value") else "") || ";"
-	let $local := 
+	let $local :=
 		for $key in map:keys($dict) return
 			if((exists($module) and starts-with($key,$module("prefix") || ":")) or matches($key,"^local:")) then
 				let $ret := $dict($key)("func")
@@ -653,7 +651,7 @@ declare function raddle:create-module($dict,$params,$top){
 					"declare function " || $dict($key)("qname") || $ret || ";"
 			else
 				()
-	let $anon := 
+	let $anon :=
 		for $key in map:keys($dict) return
 			if(matches($key,"^anon:")) then
 				$dict($key)("func")
@@ -764,7 +762,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 						let $qname := array:head($c)
 						(: TODO keep array and descend into it if nested :)
 						let $args := array:flatten(array:tail($c))
-						let $args := 
+						let $args :=
 							if(count($args) > 0 and $pre ne "") then
 								let $index := index-of($args,"$arg0")
 								let $args := remove($args,$index)
@@ -817,7 +815,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 			let $arity := array:size($value("args"))
 			let $qname := $value("name")
 			let $args := $value("args")
-			let $args := 
+			let $args :=
 				array:for-each($args,function($_){
 					if($_ instance of array(item()?)) then
 						raddle:compile($_,(),(),$params)
@@ -846,7 +844,7 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				else
 					(: TODO detect exec :)
 					let $fn := $qname || "(" || string-join(array:flatten($args),",") || ")"
-					return 
+					return
 						if(exists($parent) or $top) then
 							"function(" || $fargs || "){ " || $fn || "}"
 						else
@@ -964,7 +962,7 @@ declare function raddle:transpile($str,$params) {
 			(: TODO detect namespace declaration(s) :)
 			raddle:create-module($dict,$params,true())
 		else
-			let $moduledefs := 
+			let $moduledefs :=
 				map:for-each-entry($dict,function($key,$val){
 					if(map:contains($val,"has_module") and $val("has_module") and map:contains($val,"func")) then
 						$val("func")
