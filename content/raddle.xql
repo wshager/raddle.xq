@@ -6,7 +6,7 @@ import module namespace console="http://exist-db.org/xquery/console";
 declare variable $raddle:suffix := "\+\*\-\?";
 declare variable $raddle:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
 declare variable $raddle:qname := "[" || $raddle:ncname || "]*:?" || "[" || $raddle:ncname || "]+";
-declare variable $raddle:operators := "&amp;\|=<>!";
+declare variable $raddle:operators := "&amp;\|=<>!\+\-\[";
 declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\/#@\^";
 (:declare variable $raddle:filterRegexp := "(\)|\]|\$" || $raddle:qname || ")?\[([^\[\]]*)\]";:)
 (:
@@ -19,11 +19,12 @@ declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%\/#@\
 declare variable $raddle:allchars := "\p{L}\p{N}\-_\.\$:%\/#@\^";
 declare variable $raddle:filterRegexp := "(\])|(,)?([^\[\]]*)(\[?)";
 declare variable $raddle:normalizeRegExp := concat("(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)([<>!]?=(?:[\w]*=)?|>|<)(\([",$raddle:allchars,",]+\)|[",$raddle:allchars,"]*|)");
-declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|(,)?([",$raddle:chars || $raddle:operators,"]*)(\(?)");
+declare variable $raddle:leftoverRegExp := concat("(\)[",$raddle:suffix,"]?)|([,",$raddle:operators,"]*)?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocolRegexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:primaryKeyName := 'id';
 declare variable $raddle:jsonQueryCompatible := true();
 declare variable $raddle:operatorMap := map {
+	"[" := "filter",
 	"=" := "is",
 	">" := "gt",
 	">=" := "ge",
@@ -113,19 +114,33 @@ declare function raddle:value-from-strings($val as xs:string,$strings) {
 };
 
 declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
-	if($group[@nr=3]) then
-		array:append($ret,map { "name" := raddle:value-from-strings($group[@nr=3]/string(),$strings), "args" := raddle:wrap($next,$strings), "suffix" := $suffix})
-	else
-		array:append($ret,raddle:wrap($next,$strings))
+	let $x :=
+		if($group[@nr=3]) then
+			map { "name" := raddle:value-from-strings($group[@nr=3]/string(),$strings), "args" := raddle:wrap($next,$strings), "suffix" := $suffix}
+		else
+			raddle:wrap($next,$strings)
+	return
+		if(matches($group[@nr=2]/string(),"^[" || $raddle:operators || "]$")) then
+			let $rev := array:reverse($ret)
+			let $last := array:head($rev)
+			let $operator := $raddle:operatorMap(replace($group[@nr=2]/string(),"[^" || $raddle:operators || "]*",""))
+			let $null := console:log($operator)
+			return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := [$last, $x], "suffix" := ""})
+		else
+			array:append($ret,$x)
 };
 
-declare function raddle:append-prop-or-value($string,$strings,$ret) {
-	if(matches($string,"[" || $raddle:operators || "]+")) then
-		let $rev := array:reverse($ret)
-		let $last := array:head($rev)
-		let $op := raddle:to-op($string)
-(:		let $null := console:log($op):)
-		return array:append(array:reverse(array:tail($rev)),map { "name" := $op(1), "args" := [$last, raddle:value-from-strings($op(3),$strings)], "suffix" := ""})
+declare function raddle:append-prop-or-value($string,$operator,$strings,$ret) {
+	if(matches($operator,"[" || $raddle:operators || "]+")) then
+		let $operator := $raddle:operatorMap(replace($operator,"[^" || $raddle:operators || "]*",""))
+		return (: TODO check for unary operators :)
+			if(array:size($ret)>0) then
+				let $rev := array:reverse($ret)
+				let $last := array:head($rev)
+				return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := [$last, raddle:value-from-strings($string,$strings)], "suffix" := ""})
+			else
+				let $null := console:log($operator)
+				return array:append($ret,map { "name" := $operator, "args" := raddle:value-from-strings($string,$strings), "suffix" := ""})
 	else
 		array:append($ret,raddle:value-from-strings($string,$strings))
 };
@@ -138,10 +153,9 @@ declare function raddle:wrap-open-paren($rest,$strings,$index,$group,$ret){
 declare function raddle:wrap($rest,$strings,$ret,$group){
 	if(exists($rest)) then
 		if($group[@nr=4]) then
-			let $null := console:log((raddle:get-index($rest),",",$group[@nr=3]/string()))
-			return raddle:wrap-open-paren($rest,$strings,raddle:get-index($rest),$group,$ret)
-		else if($group[@nr=3] or $group[@nr=2]/string() = ",") then
-			raddle:wrap($rest,$strings,raddle:append-prop-or-value($group[@nr=3]/string(),$strings,$ret))
+			raddle:wrap-open-paren($rest,$strings,raddle:get-index($rest),$group,$ret)
+		else if($group[@nr=3] or matches($group[@nr=2]/string(),"[," || $raddle:operators || "]+")) then
+			raddle:wrap($rest,$strings,raddle:append-prop-or-value($group[@nr=3]/string(),$group[@nr=2]/string(),$strings,$ret))
 		else
 			raddle:wrap($rest,$strings,$ret)
 	else
@@ -165,7 +179,6 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 				let $prev := array:head($rev)
 				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || "[" || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
 			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
-				let $null := console:log(($index,$group))
 				let $val :=
 						string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params)))
 				return array:append($ret,[
@@ -372,8 +385,8 @@ declare function raddle:set-conjunction($query as xs:string) {
 
 declare function raddle:normalize-filter($query as xs:string?, $params as map(xs:string*,item()?)) {
 	let $query :=
-		if(matches($query,"^\p{N}+$")) then
-			"position(.)=$query"
+		if(matches($query,"^[\+\-]?\p{N}+$")) then (: TODO replace correct integers :)
+			"position(.)=" || $query
 		else
 			$query
 	return "(" || $query || ")"
