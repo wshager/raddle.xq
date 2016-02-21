@@ -22,33 +22,84 @@ Arrow op is useless
 TODO we may support bitwise operators, increment/decrement operators, assignment operators, etc.
 :)
 
-declare variable $raddle:operators := [
-	",",
-	("some", "every", "switch", "typeswitch", "try", "if"),
-	"or",
-	"and",
-	("eq", "ne", "lt", "le", "gt", "ge", "=", "!=", "<=", ">=", "<<", ">>", "<", ">", "is"),
-	"||",
-	"to",
-	("+","-"),
-	("div", "idiv", "mod"),
-	("union","|"),
-	("intersect", "except"),
-	"instance of",
-	"treat as",
-	"castable as",
-	"cast as",
-	"=>",
-	("+","-"),
-	"!",
-	("/","//"),
-	("filter","?")
-];
+declare variable $raddle:xq-operators := map {
+	1: ",",
+	2.1: "some",
+	2.2: "every",
+	2.3: "switch",
+	2.4: "typeswitch",
+	2.5: "try",
+	2.6: "if",
+	3: "or",
+	4: "and",
+	5.1: "eq",
+	5.2: "ne",
+	5.3: "lt",
+	5.4: "le",
+	5.5: "gt",
+	5.6: "ge",
+	5.7: "=",
+	5.8: "!=",
+	5.9: "<=",
+	5.10: ">=",
+	5.11: "<<",
+	5.12: ">>",
+	5.13: "<",
+	5.14: ">",
+	5.15: "is",
+	6: "||",
+	7: "to",
+	8.1: "+",
+	8.2: "-",
+	9.1: "*",
+	9.2: "div",
+	9.3: "idiv",
+	9.4: "mod",
+	10.1: "union",
+	10.2: "|",
+	11.1: "intersect",
+	11.2: "except",
+	12: "instance of",
+	13: "treat as",
+	14: "castable as",
+	15: "cast as",
+	16: "=>",
+	17.1: "+",
+	17.2: "-",
+	18: "!",
+	19.1: "/",
+	19.2: "//",
+	20.1: "[]",
+	20.2: "?"
+};
+
+declare variable $raddle:operator-map := map {
+	5.7: "geq",
+	5.8: "gne",
+	5.9: "gle",
+	5.10: "gge",
+	5.11: "precedes",
+	5.12: "follows",
+	5.13: "glt",
+	5.14: "ggt",
+	6: "concat",
+	8.1: "add",
+	8.2: "subtract",
+	9.1: "multiply",
+	10.1: "union",
+	17.1: "plus",
+	17.2: "minus",
+	18: "map",
+	19.1: "select",
+	19.2: "select-all",
+	20.1: "filter",
+	20.2: "lookup"
+};
 
 declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%/#@\^";
 
 declare variable $raddle:filter-regexp := "(\])|(,)?([^\[\]]*)(\[?)";
-declare variable $raddle:operator-regexp := "=#[0-9]+=";
+declare variable $raddle:operator-regexp := "=#[0-9\.]+=";
 declare variable $raddle:paren-regexp := concat("(\)[",$raddle:suffix,"]?)|(",$raddle:operator-regexp,"|,)?([",$raddle:chars,"]*)(\(?)");
 declare variable $raddle:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 declare variable $raddle:json-query-compatible := true();
@@ -144,51 +195,103 @@ declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
 			let $rev := array:reverse($ret)
 			let $last := array:head($rev)
 			let $operator := $group[@nr=2]/string()
-			let $null := console:log($operator)
 			return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := [$last, $x], "suffix" := ""})
 		else
 			array:append($ret,$x)
 };
 
+declare function raddle:operator-precedence($string,$operator,$strings,$ret){
+	let $rev := array:reverse($ret)
+	let $last := array:head($rev)
+	let $end := array:size($ret) = 1
+	let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$raddle:operator-regexp)
+	(: for unary operators :)
+	let $is-unary-op := raddle:op-int($operator) = 8 and $has-preceding-op and (array:size($last("args")) = 1 or $end)
+	let $operator :=
+		if($is-unary-op) then
+			raddle:unary-op($operator)
+		else
+			$operator
+	let $val :=
+		if(exists($string)) then
+			raddle:value-from-strings($string,$strings)
+		else
+			()
+	let $preceeds := $has-preceding-op and raddle:op-int($operator) > raddle:op-int($last("name"))
+	let $name :=
+		if($preceeds) then
+			$last("name")
+		else
+			$operator
+	let $cons := console:log($string || "," || $operator || "," || $preceeds || "," || $is-unary-op || "," || $end)
+	let $args :=
+		if($preceeds) then
+			(: if operator > preceding swap the nesting :)
+			let $nargs :=
+				if(array:size($last("args"))>1) then
+					[$last("args")(2)]
+				else
+					[]
+			let $nargs :=
+				if($val) then
+					array:append($nargs,$val)
+				else
+					$nargs
+			return [$last("args")(1),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}]
+		else
+			if($val) then
+				[$last, $val]
+			else
+				[$last]
+	return array:append(array:reverse(array:tail($rev)),map { "name" := $name, "args" := $args, "suffix" := ""})
+};
+
 declare function raddle:append-prop-or-value($string,$operator,$strings,$ret) {
 	if(matches($operator, $raddle:operator-regexp || "+")) then
 		if(array:size($ret)>0) then
-			let $rev := array:reverse($ret)
-			let $last := array:head($rev)
-			let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$raddle:operator-regexp)
-			(: for unary operators :)
-			let $operator :=
-				if($has-preceding-op and array:size($last("args")) = 1) then
-					raddle:unary-op($operator)
-				else
-					$operator
-			let $map :=
-				if($has-preceding-op and raddle:op-num($operator) > raddle:op-num($last("name"))) then
-					(: if operator > preceding swap the nesting :)
-					map { "name" := $last("name"), "args" := [$last("args")(1),map { "name" := $operator, "args" :=
-						if(array:size($last("args"))>1) then
-							[$last("args")(2),raddle:value-from-strings($string,$strings)]
-						else
-							[raddle:value-from-strings($string,$strings)], "suffix" := ""}], "suffix" := ""}
-				else
-					if(exists($string)) then
-						map { "name" := $operator, "args" := [$last, raddle:value-from-strings($string,$strings)], "suffix" := ""}
-					else
-						map { "name" := $operator, "args" := [$last], "suffix" := ""}
-			return array:append(array:reverse(array:tail($rev)),$map)
+			raddle:operator-precedence($string,$operator,$strings,$ret)
 		else
-			let $null := console:log($operator)
-			return array:append($ret,map { "name" := $operator, "args" := raddle:value-from-strings($string,$strings), "suffix" := ""})
+			array:append($ret,map { "name" := raddle:unary-op($operator), "args" := [raddle:value-from-strings($string,$strings)], "suffix" := ""})
 	else
 		array:append($ret,raddle:value-from-strings($string,$strings))
 };
 
+declare function raddle:to-op($opnum){
+	if(map:contains($raddle:operator-map,$opnum)) then
+		"n:" || $raddle:operator-map($opnum)
+	else
+		"n:" || replace($raddle:xq-operators($opnum)," ","-")
+};
+
 declare function raddle:unary-op($op){
-	concat("=#", raddle:op-num($op) + 14,"=")
+	concat("=#", raddle:op-num($op) + 9,"=")
+};
+
+declare function raddle:op-int($op){
+	floor(raddle:op-num($op))
 };
 
 declare function raddle:op-num($op){
 	number(replace($op,"[=#]",""))
+};
+
+declare function raddle:rename($tree,$fn) {
+	if($tree instance of array(item()?)) then
+		array:for-each($tree,function($t){ raddle:rename($t,$fn) })
+	else
+		map {
+			"name": $fn($tree("name")),
+			"args": if($tree("args") instance of array(item()?)) then
+				array:for-each($tree("args"),function($arg){
+					if($arg instance of map(xs:string?,item()?)) then
+						raddle:rename($arg,$fn)
+					else
+						$arg
+				})
+				else
+					$tree("args"),
+			"suffix": $tree("suffix")
+		}
 };
 
 declare function raddle:wrap-open-paren($rest,$strings,$index,$group,$ret){
@@ -201,11 +304,7 @@ declare function raddle:wrap($rest,$strings,$ret,$group){
 		if($group[@nr=4]) then
 			raddle:wrap-open-paren($rest,$strings,raddle:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or matches($group[@nr=2]/string(),$raddle:operator-regexp || "+|,")) then
-			let $null := if(matches($group[@nr=2]/string(),$raddle:operator-regexp || "+")) then
-				console:log($group)
-			else
-				()
-			return raddle:wrap($rest,$strings,raddle:append-prop-or-value($group[@nr=3]/string(),$group[@nr=2]/string(),$strings,$ret))
+			raddle:wrap($rest,$strings,raddle:append-prop-or-value($group[@nr=3]/string(),$group[@nr=2]/string(),$strings,$ret))
 		else
 			raddle:wrap($rest,$strings,$ret)
 	else
@@ -217,7 +316,12 @@ declare function raddle:wrap($match,$strings,$ret){
 };
 
 declare function raddle:wrap($match,$strings){
-	raddle:wrap($match,$strings,[])
+	raddle:rename(raddle:wrap($match,$strings,[]),function($name){
+		if(matches($name,$raddle:operator-regexp)) then
+			raddle:to-op(raddle:op-num($name))
+		else
+			$name
+	})
 };
 
 declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
@@ -227,13 +331,11 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 			if($group[@nr=3]/string()="") then
 				let $rev := array:reverse($ret)
 				let $prev := array:head($rev)
-				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || "=filter=" || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
+				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || "=#20.1=" || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
 			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
-				let $val :=
-						string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params)))
-				return array:append($ret,[
+				array:append($ret,[
 					replace($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$",""),
-					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","$2=filter=") || raddle:normalize-filter($val,$params)
+					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","$2=#20.1=") || raddle:normalize-filter(string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params))),$params)
 				])
 			else
 				array:append($ret,[$group[@nr=3]/string(),"array(" || raddle:wrap-square(subsequence($rest,1,$index),$params) || ")"])
@@ -267,7 +369,7 @@ declare function raddle:wrap-square($match,$params){
 declare function raddle:normalize-filter($query as xs:string?, $params as map(xs:string*,item()?)) {
 	let $query :=
 		if(matches($query,"^[\+\-]?\p{N}+$")) then (: TODO replace correct integers :)
-			"position(.)=#16=" || $query
+			"position(.)=#5.7=" || $query
 		else
 			$query
 	return "(" || $query || ")"
@@ -275,41 +377,34 @@ declare function raddle:normalize-filter($query as xs:string?, $params as map(xs
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
 	let $query := replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20")
-	let $query := string-join(array:flatten(raddle:wrap-square(analyze-string($query,$raddle:filter-regexp)/fn:match,$params)))
 	let $query := replace($query,"%3A",":")
 	let $query := replace($query,"%2C",",")
-	let $query :=
-		if($raddle:json-query-compatible) then
-			let $query := replace($query,"%3C=","=le=")
-			let $query := replace($query,"%3E=","=ge=")
-			let $query := replace($query,"%3C","=lt=")
-			let $query := replace($query,"%3E","=gt=")
-			return $query
-		else
-			$query
-	(: normalize to xquery :)
-	(: TODO backwards support RQL, >= and <= will always be incompatible... :)
-	let $query := replace($query,"%20+","%20")
+	let $query := replace($query,"%3C","<")
+	let $query := replace($query,"%3E",">")
+	let $query := string-join(array:flatten(raddle:wrap-square(analyze-string($query,$raddle:filter-regexp)/fn:match,$params)))
+	(: TODO backwards support RQL, >= and <= will always be incompatible, use general comparisons instead :)
+	(: normalize xquery :)
 	(: prevent operator overwrites :)
-	let $query := replace($query,"===","=#16=")
-	let $ops := array:flatten($raddle:operators)
-	let $query := fold-left(1 to count($ops),$query,function($cur,$next){
-		if($next ne 1 and $next ne 16) then
-			let $op := replace(raddle:escape-for-regex($ops[$next])," ","[ =]+")
-			let $cur := replace($cur,"=" || $op || "=","=#" || $next || "=")
-			return
-				if(matches($ops[$next],"\w+")) then
-					replace($cur,"%20" || $op || "%20","=#" || $next || "=")
+	let $query := fold-left(map:keys($raddle:xq-operators),$query,function($cur,$next){
+		if($next ne 1 and $next ne 5.7) then
+(:			let $cur := replace($cur,"=" || $op || "=","=#" || $next || "="):)
+				if(matches($raddle:xq-operators[$next],"\w+")) then
+					replace($cur,"%20" || replace($raddle:xq-operators[$next]," ","(%20)+") || "%20","=#" || $next || "=")
 				else
-					replace($cur,"([^=]?)" || $op || "([^=]?)","$1=#" || $next || "=$2")
+					let $op := raddle:escape-for-regex($raddle:xq-operators($next))
+					return if($next = (8.2,17.2)) then
+						replace($cur,"(^|=|%20)" || $op || "(%20)?","$1=#" || $next || "=$2")
+					else
+						replace($cur,"(%20)?" || $op || "(%20)?","$1=#" || $next || "=$2")
 		else
 			$cur
 	})
 	(: prevent = ambiguity with xquery's hopelessly outdated regex engine... :)
-	let $query := replace($query,"=(#[0-9]+)=","%20$1%20")
+	let $query := replace($query,"=(#[0-9\.]+)=","%20$1%20")
 	(: prevent = overwrite :)
-	let $query := replace($query,"([^=]?)=([^=]?)","$1=#16=$2")
-	let $query := replace($query,"%20(#[0-9]+)%20","=$1=")
+	let $query := replace($query,"(%20)?=(%20)?","$1=#5.7=$2")
+	let $query := replace($query,"%20(#[0-9\.]+)%20","=$1=")
+	let $query := replace($query,"%20+","%20")
 	let $query := replace($query,"%20=|=%20","=")
 	(: TODO check if there are any ops left and either throw or fix :)
 	return $query
