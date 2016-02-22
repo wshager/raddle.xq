@@ -275,23 +275,17 @@ declare function raddle:op-num($op){
 	number(replace($op,"[=#]",""))
 };
 
-declare function raddle:rename($tree,$fn) {
-	if($tree instance of array(item()?)) then
-		array:for-each($tree,function($t){ raddle:rename($t,$fn) })
-	else
-		map {
-			"name": $fn($tree("name")),
-			"args": if($tree("args") instance of array(item()?)) then
-				array:for-each($tree("args"),function($arg){
-					if($arg instance of map(xs:string?,item()?)) then
-						raddle:rename($arg,$fn)
-					else
-						$arg
-				})
-				else
-					$tree("args"),
-			"suffix": $tree("suffix")
-		}
+declare function raddle:rename($a,$fn) {
+	array:for-each($a,function($t){
+		if($t instance of map(xs:string?,item()?)) then
+			map {
+				"name": $fn($t("name")),
+				"args": raddle:rename($t("args"),$fn),
+				"suffix": $t("suffix")
+			}
+		else
+			$t
+	})
 };
 
 declare function raddle:wrap-open-paren($rest,$strings,$index,$group,$ret){
