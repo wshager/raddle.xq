@@ -135,13 +135,13 @@ declare function raddle:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
 };
 
-declare function raddle:parse-strings($strings as element()*) {
-	raddle:wrap(analyze-string(string-join(for-each(1 to count($strings),function($i){
+declare function raddle:parse-strings($strings as element()*,$params) {
+	raddle:wrap(analyze-string(raddle:normalize-query(string-join(for-each(1 to count($strings),function($i){
 		if(name($strings[$i]) eq "match") then
 			"$%" || $i
 		else
 			$strings[$i]/string()
-	})),$raddle:paren-regexp)/fn:match,$strings)
+	})),$params),$raddle:paren-regexp)/fn:match,$strings)
 };
 
 declare function raddle:parse($query as xs:string?){
@@ -149,7 +149,7 @@ declare function raddle:parse($query as xs:string?){
 };
 
 declare function raddle:parse($query as xs:string?,$params) {
-	raddle:parse-strings(analyze-string(raddle:normalize-query($query,$params),"'[^']*'")/*)
+	raddle:parse-strings(analyze-string($query,"'[^']*'")/*,$params)
 };
 
 declare function raddle:get-index-from-tokens($tok) {
@@ -223,7 +223,6 @@ declare function raddle:operator-precedence($string,$operator,$strings,$ret){
 			$last("name")
 		else
 			$operator
-	let $cons := console:log($string || "," || $operator || "," || $preceeds || "," || $is-unary-op || "," || $end)
 	let $args :=
 		if($preceeds) then
 			(: if operator > preceding swap the nesting :)
@@ -369,7 +368,164 @@ declare function raddle:normalize-filter($query as xs:string?, $params as map(xs
 	return "(" || $query || ")"
 };
 
+declare function raddle:xq-seqtype($parts,$ret){
+	let $maybe-seqtype := head($parts)/string()
+	return
+		if(matches($maybe-seqtype,"\{")) then
+			$ret || "," || raddle:xq-body(tail($parts),"")
+		else if(replace($maybe-seqtype,"\s","") = "as") then
+			raddle:xq-seqtype(subsequence($parts,3),$parts[2]/string())
+		else
+			raddle:xq-seqtype(tail($parts),"item()")
+};
+
+
+declare function raddle:xq-params($parts,$ret,$i){
+	let $maybe-param := head($parts)/fn:group[@nr=1]/string()
+	let $maybe-param :=
+		if(empty($maybe-param)) then
+			head($parts)/string()
+		else
+			$maybe-param
+	return
+		if(matches($maybe-param,"\)")) then
+			")," || raddle:xq-seqtype($parts,"item()")
+		else if(matches($maybe-param,",")) then
+			"," || raddle:xq-params(tail($parts),"",$i)
+		else
+			if(replace($parts[2]/string(),"\s","") = "as") then
+				$parts[3]/string() || raddle:xq-params(for-each(subsequence($parts,4),function($p){
+					if($p/fn:group[@nr=1]/string() = $maybe-param) then
+						element fn:match {
+							element fn:group {
+								attribute { "nr" } { 1 },
+								"$" || $i
+							}
+						}
+					else
+						$p
+				}),"",$i+1)
+			else if($parts[2]/string() = ",") then
+				"," || raddle:xq-params(subsequence($parts,3),"",$i)
+			else
+				"item()" || raddle:xq-params(for-each(subsequence($parts,2),function($p){
+					if($p/fn:group[@nr=1]/string() = $maybe-param) then
+						element fn:match {
+							element fn:group {
+								attribute { "nr" } { 1 },
+								"$" || $i
+							}
+						}
+					else
+						$p
+				}),"",$i+1) (: or throw :)
+};
+
+declare function raddle:xq-fn($parts,$ret){
+	(: TODO $parts(2) should be a paren, or error :)
+	head($parts)/fn:group[@nr=1]/string() || ",(" || raddle:xq-params(subsequence($parts,3),"",1)
+};
+
+declare function raddle:xq-ns($parts,$ret){
+	let $ns := replace(head($parts)/string(),"\s","")
+	let $rest := tail($parts)
+	return string-join($rest)
+};
+
+declare function raddle:xq-var($parts,$ret){
+	let $ns := replace(head($parts)/string(),"\s","")
+	let $rest := tail($parts)
+	return string-join($rest)
+};
+
+declare function raddle:xq-annot($parts,$ret){
+	let $maybe-annot := head($parts)/fn:group[@nr=1]/string()
+	let $rest := tail($parts)
+	return
+		if(matches($maybe-annot,"^%")) then
+			raddle:xq-annot($rest,$ret || $maybe-annot || "%")
+		else if($maybe-annot = "function") then
+			"define(" || $ret || raddle:xq-fn($rest,"")
+		else if($maybe-annot = "variable") then
+			"var(" || $ret || raddle:xq-var($rest,"")
+		else ""
+(:			raddle:xq-decl(($maybe-annot,$rest),""):)
+};
+
+declare function raddle:xq-decl($parts,$ret){
+	let $type := head($parts)
+	let $rest := tail($parts)
+	return
+		if($type = "function") then
+			"define(" || raddle:xq-fn($rest,$ret) || ")"
+		else if($type = "variable") then
+			"var(" || raddle:xq-var($rest,$ret) || ")"
+		else
+			"ns(" || raddle:xq-ns($rest,"") || ")"
+};
+
+declare function raddle:xq-module($parts,$ret){
+	let $head := head($parts)
+	let $rest := tail($parts)
+	return raddle:xq-block($rest,concat($ret,"(",$head/string(),")"))
+};
+
+declare function raddle:xq-body($parts,$ret){
+	raddle:xq-body($parts,$ret,())
+};
+
+declare function raddle:pop($parts){
+	reverse(tail(reverse($parts)))
+};
+
+declare function raddle:xq-body($parts,$ret,$lastseen){
+	let $head := head($parts)/fn:group[@nr=1]/string()
+	let $head :=
+		if(empty($head)) then
+			head($parts)/string()
+		else
+			$head
+	let $n := console:log(string-join(($head,$lastseen)," || "))
+	return
+		if(count($parts)>1) then
+			if($head = "let") then
+				$ret || "let(" || raddle:xq-body(subsequence($parts,3),replace($parts[2]/string(),"^\$|\s",""),($lastseen,$head))
+			else if($head = ":=") then
+				$ret || "," || raddle:xq-body(subsequence($parts,3),$parts[2]/string(),(raddle:pop($lastseen),$head))
+			else if($head = "return") then
+				$ret || raddle:xq-body(tail($parts),"",$head)
+			else if($head = "if") then
+				(: TODO add xq-if, or generic xq-tri x(a,b,c) with then/else as params :)
+				$ret || $head || raddle:xq-body(tail($parts),"",$head)
+			else if($head = "then") then
+				$ret || raddle:xq-body(tail($parts),"",$head)
+			else if($head = "else") then
+				 $ret || raddle:xq-body(tail($parts),"",$head)
+			else
+				$ret || $head || raddle:xq-body(tail($parts),if(matches($head,"\)")) then "," else "",$lastseen)
+		else
+			$ret || ")"
+};
+
+declare function raddle:xq-block($parts,$ret){
+	let $val := head($parts)/fn:group[@nr=1]/string()
+	let $rest := tail($parts)
+	return
+			if($val eq "version") then
+				raddle:xq-block($rest,$ret)
+	(:			raddle:xq-version($rest,$ret):)
+			else if($val eq "module") then
+				raddle:xq-module($rest,$ret)
+			else if($val eq "declare") then
+				raddle:xq-annot($rest,$ret)
+			else
+				raddle:xq-body($parts,$ret)
+};
+
 declare function raddle:normalize-query($query as xs:string?,$params) {
+	let $query := string-join(for-each(tokenize($query,";"),function($block){
+		raddle:xq-block(analyze-string($block,"(?:^?|\s+)([" || $raddle:ncname || "\$:=%]+)(?:\s+|$?)")/*,"")
+	}),",")
 	let $query := replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20")
 	let $query := replace($query,"%3A",":")
 	let $query := replace($query,"%2C",",")
