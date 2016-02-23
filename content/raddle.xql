@@ -30,6 +30,11 @@ declare variable $raddle:xq-operators := map {
 	2.4: "typeswitch",
 	2.5: "try",
 	2.6: "if",
+	2.7: "then",
+	2.8: "else",
+	2.9: "let",
+	2.10: ":=",
+	2.11: "return",
 	3: "or",
 	4: "and",
 	5.1: "eq",
@@ -52,8 +57,8 @@ declare variable $raddle:xq-operators := map {
 	8.1: "+",
 	8.2: "-",
 	9.1: "*",
-	9.2: "div",
-	9.3: "idiv",
+	9.2: "idiv",
+	9.3: "div",
 	9.4: "mod",
 	10.1: "union",
 	10.2: "|",
@@ -192,10 +197,13 @@ declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
 			raddle:wrap($next,$strings)
 	return
 		if(matches($group[@nr=2]/string(),"^" || $raddle:operator-regexp || "$")) then
-			let $rev := array:reverse($ret)
-			let $last := array:head($rev)
 			let $operator := $group[@nr=2]/string()
-			return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := [$last, $x], "suffix" := ""})
+			return if(array:size($ret)>0) then
+				let $rev := array:reverse($ret)
+				let $last := array:head($rev)
+				return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := [$last, $x], "suffix" := ""})
+			else
+				array:append($ret,map { "name" := $operator, "args" := [$x], "suffix" := ""})
 		else
 			array:append($ret,$x)
 };
@@ -203,10 +211,9 @@ declare function raddle:append-or-nest($next,$strings,$group,$ret,$suffix){
 declare function raddle:operator-precedence($string,$operator,$strings,$ret){
 	let $rev := array:reverse($ret)
 	let $last := array:head($rev)
-	let $end := array:size($ret) = 1
 	let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$raddle:operator-regexp)
 	(: for unary operators :)
-	let $is-unary-op := raddle:op-int($operator) = 8 and $has-preceding-op and (array:size($last("args")) = 1 or $end)
+	let $is-unary-op := raddle:op-int($operator) = 8 and $has-preceding-op and $last("suffix") = false()
 	let $operator :=
 		if($is-unary-op) then
 			raddle:unary-op($operator)
@@ -226,23 +233,37 @@ declare function raddle:operator-precedence($string,$operator,$strings,$ret){
 	let $args :=
 		if($preceeds) then
 			(: if operator > preceding swap the nesting :)
+			let $argsize := array:size($last("args"))
 			let $nargs :=
-				if(array:size($last("args"))>1) then
-					[$last("args")(2)]
-				else
+				if($is-unary-op) then
 					[]
+				else
+					[$last("args")(2)]
 			let $nargs :=
 				if($val) then
 					array:append($nargs,$val)
 				else
 					$nargs
-			return [$last("args")(1),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}]
+			return if($argsize>1 and $is-unary-op) then
+				let $pre := $last("args")(2)
+				return [
+					$last("args")(1),
+					map {
+						"name" := $pre("name"),
+						"args" := array:append($pre("args"),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}),
+						"suffix" := ""
+					}]
+			 else
+				[$last("args")(1),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}]
 		else
-			if($val) then
-				[$last, $val]
-			else
-				[$last]
-	return array:append(array:reverse(array:tail($rev)),map { "name" := $name, "args" := $args, "suffix" := ""})
+			let $nargs := [$last]
+			return
+				if($val) then
+					array:append($nargs,$val)
+				else
+					$nargs
+	(: FIXME misuse of suffix for unary ops... :)
+	return array:append(array:reverse(array:tail($rev)),map { "name" := $name, "args" := $args, "suffix" := exists($val)})
 };
 
 declare function raddle:append-prop-or-value($string,$operator,$strings,$ret) {
@@ -478,6 +499,20 @@ declare function raddle:pop($parts){
 	reverse(tail(reverse($parts)))
 };
 
+declare function raddle:repl($lastseen,$head){
+	reverse(raddle:repl(reverse($lastseen),$head,()))
+};
+
+declare function raddle:repl($lastseen,$head,$ret){
+	if(count($lastseen)>1) then
+		if(head($lastseen) = $head) then
+			($ret, ($head - 0.1), tail($lastseen))
+		else
+			raddle:repl(tail($lastseen),$head,(head($lastseen),$ret))
+	else
+		($ret,$lastseen)
+};
+
 declare function raddle:xq-body($parts,$ret,$lastseen){
 	let $head := head($parts)/fn:group[@nr=1]/string()
 	let $head :=
@@ -485,26 +520,31 @@ declare function raddle:xq-body($parts,$ret,$lastseen){
 			head($parts)/string()
 		else
 			$head
-	let $n := console:log(string-join(($head,$lastseen)," || "))
+	let $n := console:log($lastseen)
 	return
 		if(count($parts)>1) then
-			if($head = "let") then
-				$ret || "let(" || raddle:xq-body(subsequence($parts,3),replace($parts[2]/string(),"^\$|\s",""),($lastseen,$head))
-			else if($head = ":=") then
-				$ret || "," || raddle:xq-body(subsequence($parts,3),$parts[2]/string(),(raddle:pop($lastseen),$head))
-			else if($head = "return") then
-				$ret || raddle:xq-body(tail($parts),"",$head)
-			else if($head = "if") then
-				(: TODO add xq-if, or generic xq-tri x(a,b,c) with then/else as params :)
-				$ret || $head || raddle:xq-body(tail($parts),"",$head)
-			else if($head = "then") then
-				$ret || raddle:xq-body(tail($parts),"",$head)
-			else if($head = "else") then
-				 $ret || raddle:xq-body(tail($parts),"",$head)
+			if(matches($head,$raddle:operator-regexp)) then
+				let $no := raddle:op-num($head)
+				return
+					if($no = 2.9) then
+						concat($ret,$head,"(",raddle:xq-body(subsequence($parts,3),replace($parts[2]/string(),"^\$|\s",""),($lastseen,$no)))
+					else if($no = 2.10) then
+						concat($ret,",",raddle:xq-body(subsequence($parts,3),$parts[2]/string(),raddle:repl($lastseen,$no)))
+					else if($no = 2.11) then
+						$ret || raddle:xq-body(tail($parts),"",raddle:repl($lastseen,$no))
+					else if($no = 2.6) then
+						(: TODO add xq-if, or generic xq-tri x(a,b,c) with then/else as params :)
+						$ret || $head || "(" || raddle:xq-body(tail($parts),"",($lastseen,$no))
+					else if($no = 2.7) then
+						$ret || "," || raddle:xq-body(tail($parts),"",raddle:repl($lastseen,$no))
+					else if($no = 2.8) then
+						$ret || "," || raddle:xq-body(tail($parts),"",raddle:repl($lastseen,$no))
+					else
+						$ret
 			else
-				$ret || $head || raddle:xq-body(tail($parts),if(matches($head,"\)")) then "," else "",$lastseen)
+				$ret || (if(matches($head,"[" || $raddle:ncname || "\[\]\$:=%#]+")) then $head else ()) || raddle:xq-body(tail($parts),if(matches($head,"\)")) then "," else "",$lastseen)
 		else
-			$ret || ")"
+			$ret || $head
 };
 
 declare function raddle:xq-block($parts,$ret){
@@ -523,10 +563,7 @@ declare function raddle:xq-block($parts,$ret){
 };
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
-	let $query := string-join(for-each(tokenize($query,";"),function($block){
-		raddle:xq-block(analyze-string($block,"(?:^?|\s+)([" || $raddle:ncname || "\$:=%]+)(?:\s+|$?)")/*,"")
-	}),",")
-	let $query := replace(replace($query,"&#9;|&#10;|&#13;","")," ","%20")
+	let $query := replace($query,"&#9;|&#10;|&#13;|%20"," ")
 	let $query := replace($query,"%3A",":")
 	let $query := replace($query,"%2C",",")
 	let $query := replace($query,"%3C","<")
@@ -537,25 +574,25 @@ declare function raddle:normalize-query($query as xs:string?,$params) {
 	(: prevent operator overwrites :)
 	let $query := fold-left(map:keys($raddle:xq-operators),$query,function($cur,$next){
 		if($next ne 1 and $next ne 5.7) then
-(:			let $cur := replace($cur,"=" || $op || "=","=#" || $next || "="):)
-				if(matches($raddle:xq-operators[$next],"\w+")) then
-					replace($cur,"%20" || replace($raddle:xq-operators[$next]," ","(%20)+") || "%20","=#" || $next || "=")
+			if(matches($raddle:xq-operators[$next],"\w+")) then
+				replace($cur,"\s" || $raddle:xq-operators[$next] || "\s"," =#" || $next || "= ")
+			else
+				let $op := raddle:escape-for-regex($raddle:xq-operators($next))
+				return if($next = (8.2,17.2)) then
+					replace($cur,"(^|\s)?" || $op || "(\s)?"," =#" || $next || "= ")
 				else
-					let $op := raddle:escape-for-regex($raddle:xq-operators($next))
-					return if($next = (8.2,17.2)) then
-						replace($cur,"(^|=|%20)" || $op || "(%20)?","$1=#" || $next || "=$2")
-					else
-						replace($cur,"(%20)?" || $op || "(%20)?","$1=#" || $next || "=$2")
+					replace($cur,"\s?" || $op || "\s?"," =#" || $next || "= ")
 		else
 			$cur
 	})
-	(: prevent = ambiguity with xquery's hopelessly outdated regex engine... :)
-	let $query := replace($query,"=(#[0-9\.]+)=","%20$1%20")
+	(: prevent = ambiguity :)
+	let $query := replace($query,"([^\s]=#[0-9\.]+=[^\s])"," $1 ")
+	let $query := replace($query,"\s=\s"," =#5.7= ")
 	(: prevent = overwrite :)
-	let $query := replace($query,"(%20)?=(%20)?","$1=#5.7=$2")
-	let $query := replace($query,"%20(#[0-9\.]+)%20","=$1=")
-	let $query := replace($query,"%20+","%20")
-	let $query := replace($query,"%20=|=%20","=")
+	let $query := replace($query,"\s+"," ")
+	let $query := string-join(for-each(tokenize($query,";"),function($block){
+		raddle:xq-block(analyze-string($block,"(?:^?|\s)([" || $raddle:ncname || "\$:=%#]+)(?:\s|$?)")/*,"")
+	}),",")
 	(: TODO check if there are any ops left and either throw or fix :)
 	return $query
 };
