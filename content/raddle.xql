@@ -504,13 +504,13 @@ declare function raddle:repl($lastseen,$head){
 };
 
 declare function raddle:repl($lastseen,$head,$ret){
-	if(count($lastseen)>1) then
+	if(count($lastseen)>0) then
 		if(head($lastseen) = $head) then
 			($ret, ($head - 0.1), tail($lastseen))
 		else
 			raddle:repl(tail($lastseen),$head,(head($lastseen),$ret))
 	else
-		($ret,$lastseen)
+		$ret
 };
 
 declare function raddle:xq-body($parts,$ret,$lastseen){
