@@ -1,2 +1,2 @@
 # raddle.xq
-Extensible Document Manipulation Language (in xquery)
+Recursive Definition Language (in xquery)
