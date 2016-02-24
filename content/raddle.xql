@@ -1,7 +1,6 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
-import module namespace console="http://exist-db.org/xquery/console";
 
 (:
 - http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
@@ -550,13 +549,10 @@ declare function raddle:xq-body($parts,$lastseen){
 				let $no := raddle:op-num($head)
 				let $ret :=
 					if($no = (2.06,2.09)) then
-						concat(if(count($lastseen)>0) then
-							if($lastseen[last()] eq 2.10 or $lastseen[last()] eq 2.11) then
-								",(.,"
-							else
-								","
+						concat(if(empty($lastseen)) then
+							""
 						else
-							"",
+							",",
 						$head,"(")
 					else if($no = (2.07,2.08,2.10)) then
 						","
@@ -584,7 +580,7 @@ declare function raddle:xq-body($parts,$lastseen){
 			else
 				$head || raddle:xq-body($rest,$lastseen)
 		else
-			$head || string-join(for-each($lastseen,function($l){ if($l eq 2.11 or $l eq 2.10) then "))" else ")" }))
+			$head || string-join($lastseen ! ")")
 };
 
 declare function raddle:xq-block($parts,$ret){
@@ -1046,8 +1042,12 @@ declare function raddle:compile($value,$parent,$compose,$params){
 				else if($compose) then
 					array:insert-before($args,1,$qname)
 				else
-					(: TODO detect exec :)
-					let $fn := $qname || "(" || string-join(array:flatten($args),",") || ")"
+					(: FIXME let hack :)
+					let $fn :=
+						if($qname = "n:let") then
+							"let $" || raddle:clip-string($args(1)) || " := " || $args(2) || " return " || $args(3)
+						else
+							$qname || "(" || string-join(array:flatten($args),",") || ")"
 					return
 						if(exists($parent) or $top) then
 							"function(" || $fargs || "){ " || $fn || "}"
@@ -1151,9 +1151,7 @@ declare function raddle:define($value,$params){
 					}
 			return
 				if($l=4 and not(map:contains($def,"func"))) then
-					let $func := raddle:compile($def("body"),$def,(),$params)
-					let $ni := console:log($func)
-					return map:new(($def,map { "func" := $func }))
+					map:new(($def,map { "func" := raddle:compile($def("body"),$def,(),$params) }))
 				else
 					$def
 	return $def
