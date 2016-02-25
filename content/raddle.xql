@@ -369,11 +369,11 @@ declare function raddle:wrap-open-square($rest,$params,$index,$group,$ret){
 			if($group[@nr=3]/string()="") then
 				let $rev := array:reverse($ret)
 				let $prev := array:head($rev)
-				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || "=#20.01=" || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
+				return array:append(array:reverse(array:tail($rev)),[$prev(1),$prev(2) || " =#20.01= " || raddle:normalize-filter(raddle:wrap-square(subsequence($rest,1,$index),$params),$params)])
 			else if(matches($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$")) then
 				array:append($ret,[
 					replace($group[@nr=3]/string(),"(\.|\)|\$\p{N}+)$",""),
-					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","$2=#20.01=") || raddle:normalize-filter(string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params))),$params)
+					replace($group[@nr=3]/string(), "^(.*)(\.|\)|\$\p{N}+)$","$2 =#20.01= ") || raddle:normalize-filter(string-join(array:flatten(raddle:wrap-square(subsequence($rest,1,$index),$params))),$params)
 				])
 			else
 				array:append($ret,[$group[@nr=3]/string(),"array(" || raddle:wrap-square(subsequence($rest,1,$index),$params) || ")"])
@@ -407,7 +407,7 @@ declare function raddle:wrap-square($match,$params){
 declare function raddle:normalize-filter($query as xs:string?, $params as map(xs:string*,item()?)) {
 	let $query :=
 		if(matches($query,"^[\+\-]?\p{N}+$")) then (: TODO replace correct integers :)
-			"position(.)=#5.07=" || $query
+			"position(.) =#5.07= " || $query
 		else
 			$query
 	return "(" || $query || ")"
@@ -557,7 +557,7 @@ declare function raddle:xq-body($parts,$lastseen){
 					else if($no = (2.07,2.08,2.10)) then
 						","
 					else
-						""
+						$head
 				let $ret :=
 					if($no = 2.09) then
 						concat($ret,replace($parts[2]/string(),"^\$|\s",""))
