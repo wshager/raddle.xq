@@ -135,7 +135,7 @@ declare variable $raddle:operator-map := map {
 	20.03: "lookup",
 	20.04: "array",
 	20.05: "filter-at",
-	20.07: "select-attribute"
+	20.08: "select-attribute"
 };
 
 declare variable $raddle:chars := $raddle:suffix || $raddle:ncname || "\$:%/#@\^";
@@ -338,9 +338,9 @@ declare function raddle:append-prop-or-value($string,$operator,$strings,$ret) {
 
 declare function raddle:to-op($opnum){
 	if(map:contains($raddle:operator-map,$opnum)) then
-		"n:" || $raddle:operator-map($opnum)
+		$raddle:operator-map($opnum)
 	else
-		"n:" || replace($raddle:xq-operators($opnum)," ","-")
+		replace($raddle:xq-operators($opnum)," ","-")
 };
 
 declare function raddle:unary-op($op){
@@ -351,8 +351,8 @@ declare function raddle:op-int($op){
 	number(replace($op,"^=#(\p{N}+)#?\p{N}*=$","$1"))
 };
 
-declare function raddle:op-num($op){
-	number(replace($op,"^=#(\p{N}+)#?(\p{N}*)=$","$1.$20"))
+declare function raddle:op-num($op) as xs:float {
+	xs:float(replace($op,"^=#(\p{N}+)#?(\p{N}*)=$","$1.$20"))
 };
 
 declare function raddle:op-str($op){
@@ -526,28 +526,106 @@ declare function raddle:repl($lastseen as xs:float*,$no as xs:float,$ret){
 		$ret
 };
 
+declare function raddle:close($lastseen as xs:float*,$no as xs:float,$close as xs:integer){
+	if(empty($lastseen) or $close=0) then
+		raddle:repl($lastseen,$no)
+	else
+		raddle:close(reverse(tail(reverse($lastseen))),$no, $close - 1)
+};
+
+declare function raddle:appd($lastseen as xs:float*,$no as xs:float){
+	($lastseen,$no)
+};
+
+declare function raddle:eq($a as xs:float,$b as xs:float*){
+	$a = $b
+};
+
 declare function raddle:xq-body($parts){
 	raddle:xq-body($parts,())
 };
 
+declare function raddle:closer($a as xs:float,$b as xs:float*){
+	raddle:closer($a,tail(reverse($b)),0)
+};
+
+declare function raddle:closer($a as xs:float,$b as xs:float*,$c as xs:integer){
+	if(empty($b) or raddle:eq($a,(2.08,2.11)) = false()) then
+		$c
+	else
+		raddle:closer(head($b),tail($b),$c + 1)
+};
+
+declare function raddle:xq-body-op($no,$next,$lastseen,$rest){
+	let $positional := $next and $no eq 20.01 and matches($next,"^([\+\-]?\p{N}+)|position$")
+	let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
+	let $close :=
+		if(raddle:eq($no,(2.08,2.11)) and raddle:eq($prevseen,(2.08,2.11))) then
+			raddle:closer($prevseen,$lastseen)
+		else
+			0
+	let $n := console:log($no)
+	let $ret :=
+		if(raddle:eq($no,(2.06,2.09,20.01,20.04))) then
+			concat(
+				if(raddle:eq($no, 2.09) and raddle:eq($prevseen,2.10)) then "," else "",
+				if($positional) then raddle:op-str(20.05) else raddle:op-str($no),
+			"(")
+		else if(raddle:eq($no, (2.07,2.08,2.10,2.11))) then
+			concat(if($close>0) then string-join((1 to $close) ! ")") else "", ",")
+		else if(raddle:eq($no, 20.02)) then
+			")"
+		else
+			raddle:op-str($no)
+	let $ret :=
+		if(raddle:eq($no, 2.09)) then
+			concat($ret,replace($next,"^\$|\s",""))
+		else if(raddle:eq($no, 20.01)) then
+			(: prepare filter :)
+			concat($ret,if(matches($next,"#20#08")) then "." else if($positional) then if(matches($next,"position")) then "." else ".=#5#07=" else "", $next)
+		else
+			$ret
+	let $rest :=
+		if(empty($rest) or raddle:eq($no,(2.09, 20.01)) = false()) then
+			$rest
+		else
+			tail($rest)
+	let $old := $lastseen
+	let $lastseen :=
+		if(raddle:eq($no, (2.06,2.09))) then
+			if(raddle:eq($no, 2.09) and raddle:eq($prevseen,2.10)) then
+				(: push explicit return :)
+				raddle:appd($lastseen,2.11)
+			else
+				raddle:appd($lastseen,$no)
+		else if(raddle:eq($no, (2.07,2.08,2.10,2.11))) then
+			if($close>0) then
+				raddle:close($lastseen,$no,$close)
+			else
+				raddle:repl($lastseen,$no)
+		else
+			$lastseen
+(:	let $nu := console:log($close || "," || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")):)
+	return
+		concat($ret,raddle:xq-body($rest,$lastseen))
+};
+
+declare function raddle:xq-is-array($head,$next){
+	if(matches($next,$raddle:operator-regexp)) then
+		raddle:op-num($next) eq 20.01 and matches($head,"^(\s|\(|,|" || $raddle:operator-regexp || ")")
+	else
+		false()
+};
+
 declare function raddle:xq-body($parts,$lastseen){
-	if(count($parts)>0) then
-		let $head := head($parts)/fn:group[@nr=1]/string()
-		let $head :=
-			if(empty($head)) then
-				head($parts)/string()
-			else
-				$head
+	if(empty($parts)) then
+		string-join($lastseen ! ")")
+	else
+		let $head := head($parts)/string()
 		let $rest := tail($parts)
-		let $next := head($rest)/string()
-		let $non :=
-			if(matches($next,$raddle:operator-regexp)) then
-				raddle:op-num($next)
-			else
-				()
-		let $is-array := $non = 20.01 and matches(head($parts)/string(),"^(\s|\(|,|" || $raddle:operator-regexp || ")")
+		let $next := if(empty($rest)) then () else head($rest)/string()
 		let $rest :=
-			if($is-array) then
+			if($next and raddle:xq-is-array($head,$next)) then
 				insert-before(tail($rest),1,element fn:match {
 					element fn:group {
 						attribute nr { 1 },
@@ -558,74 +636,29 @@ declare function raddle:xq-body($parts,$lastseen){
 				$rest
 		return
 			if(matches($head,$raddle:operator-regexp)) then
-				let $no := raddle:op-num($head)
-				let $positional := $no = 20.01 and matches($next,"^([\+\-]?\p{N}+)|position$")
-				let $closer := ($no = 2.08 and $lastseen[last()] = xs:float(2.11)) or ($no = 2.11 and $lastseen[last()] = xs:float(2.08))
-				let $ret :=
-					if($no = (2.06,2.09,20.01,20.04)) then
-						concat(
-							if($no = 2.09 and $lastseen[last()] = xs:float(2.10)) then "," else "",
-							if($positional) then raddle:op-str(20.05) else $head,
-						"(")
-					else if($no = (2.07,2.08,2.10,2.11)) then
-						concat(if($closer) then ")" else "", ",")
-					else if($no = 20.02) then
-						")"
-					else
-						$head
-				let $ret :=
-					if($no = 2.09) then
-						concat($ret,replace($next,"^\$|\s",""))
-					else if($no = 20.01) then
-						(: prepare filter :)
-						concat($ret,if($positional) then if(matches($next,"position")) then "." else ".=#5#07=" else "", $next)
-					else
-						$ret
-				let $rest :=
-					if($no = (2.09, 20.01)) then
-						tail($rest)
-					else
-						$rest
-				let $lastseen :=
-					if($no = (2.06,2.09)) then
-						($lastseen,$no)
-					else if($no = (2.07,2.08,2.10,2.11)) then
-						raddle:repl(
-							if($closer) then
-								tail($lastseen)
-							else
-								$lastseen,$no)
-					else
-						$lastseen
-				return
-					concat($ret,raddle:xq-body($rest,$lastseen))
+				raddle:xq-body-op(raddle:op-num($head),$next,$lastseen,$rest)
 			else
-				$head || raddle:xq-body($rest,$lastseen)
-	else
-		string-join($lastseen ! ")")
+(:				let $nu := console:log($head) return:)
+				concat($head,raddle:xq-body($rest,$lastseen))
 };
 
 declare function raddle:xq-block($parts,$ret){
 	let $val := head($parts)/fn:group[@nr=1]/string()
 	let $rest := tail($parts)
 	return
-			if($val eq "version") then
-				raddle:xq-block($rest,$ret)
-	(:			raddle:xq-version($rest,$ret):)
-			else if($val eq "module") then
-				raddle:xq-module($rest,$ret)
-			else if($val eq "declare") then
-				raddle:xq-annot($rest,$ret)
-			else
-				raddle:xq-body($parts)
+		if($val eq "version") then
+			raddle:xq-block($rest,$ret)
+(:			raddle:xq-version($rest,$ret):)
+		else if($val eq "module") then
+			raddle:xq-module($rest,$ret)
+		else if($val eq "declare") then
+			raddle:xq-annot($rest,$ret)
+		else
+			raddle:xq-body($parts)
 };
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
-	let $query := replace($query,"&#9;|&#10;|&#13;|%20"," ")
-	let $query := replace($query,"%3A",":")
-	let $query := replace($query,"%2C",",")
-	let $query := replace($query,"%3C","<")
-	let $query := replace($query,"%3E",">")
+	let $query := replace(replace(replace(replace(replace($query,"%3E",">"),"%3C","<"),"%2C",","),"%3A",":"),"&#9;|&#10;|&#13;|%20"," ")
 	(: TODO backwards support RQL, >= and <= will always be incompatible, use general comparisons instead :)
 	(: normalize xquery :)
 	(: prevent operator overwrites :)
@@ -1178,6 +1211,17 @@ declare function raddle:define($value,$params){
 				else
 					$def
 	return $def
+};
+
+declare function raddle:stringify($a,$params){
+	string-join(array:flatten(array:for-each($a,function($t){
+		if($t instance of map(xs:string?,item()?)) then
+			concat($t("name"),"(",string-join(array:flatten(raddle:stringify($t("args"),$params)),","),")",if($t("suffix") instance of xs:string) then $t("suffix") else "")
+		else if($t instance of array(item())) then
+			string-join(array:flatten(raddle:stringify($t,$params)),",")
+		else
+			$t
+	})),",")
 };
 
 declare function raddle:transpile($str,$params) {
