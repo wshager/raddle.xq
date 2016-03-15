@@ -1,6 +1,7 @@
 xquery version "3.1";
 
 module namespace raddle="http://lagua.nl/lib/raddle";
+
 import module namespace console="http://exist-db.org/xquery/console";
 (:
 - http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
@@ -786,10 +787,12 @@ declare function raddle:xq-body($parts,$ret,$lastseen){
 (:			else if(matches($head,"^\$") and matches($head,":")=false()) then:)
 (:				raddle:xq-body($rest,$lastseen,concat($ret,"_",$params($head)),$params):)
 			else
-				raddle:xq-body($rest,if(raddle:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then
-					concat($ret,$head,",")
-				else
-					concat($ret,$head),$lastseen)
+				raddle:xq-body($rest,
+					if(raddle:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then
+						concat($ret,$head,",")
+					else
+						concat($ret,$head),
+				$lastseen)
 };
 
 declare function raddle:xq-block($parts,$ret){
@@ -816,7 +819,7 @@ declare function raddle:xq-block($parts,$ret){
 				else
 					raddle:xq-block($rest,$ret || ",")
 			else
-				raddle:xq-body($rest,$ret)
+				raddle:xq-body($parts,$ret)
 };
 
 declare function raddle:normalize-query($query as xs:string?,$params) {
@@ -843,9 +846,7 @@ declare function raddle:normalize-query($query as xs:string?,$params) {
 };
 
 declare function raddle:convert($string){
-	if(matches($string,concat("(xs:)?(",string-join(array:flatten($raddle:xq-types),"|"),")[",$raddle:suffix,"]?$"))) then
-		$string
-	else if(matches($string,"^(\$.*)|([^#]+#[0-9]+)|(&quot;[^&quot;]*&quot;)$")) then
+	if(matches($string,"^(\$.*)|([^#]+#[0-9]+)|(&quot;[^&quot;]*&quot;)$")) then
 		$string
 	else if(map:contains($raddle:auto-converted,$string)) then
 		$raddle:auto-converted($string)
@@ -932,6 +933,43 @@ declare function raddle:use($value,$params){
 			})
 		)
 	)
+};
+
+declare function raddle:load-module($location){
+	let $desc := inspect:inspect-module(xs:anyURI($location))/function
+	let $fns := inspect:module-functions(xs:anyURI($location))
+	return
+		map:new(
+			for $fn at $i in $desc return
+				map:entry($fn/@name || "#" || count($fn/argument),$fns[$i])
+		)
+};
+
+declare function raddle:exec($value,$params){
+	raddle:exec($value,$params,map { "core": raddle:load-module("../lib/core.xql") })
+};
+
+declare function raddle:exec($value,$params,$dict){
+	(: if sequence, call core:seq, else call core:function :)
+	(: if import is a native module, convert it into an object :)
+	(: each core entry treats it's own params :)
+	(: the top is usually a module or a sequence of functions, imports and a body :)
+	let $name :=
+		if($value("name") eq "") then
+			"seq"
+		else
+			$value("name")
+	let $args := $value("args")
+	let $parts := tokenize($name,":")
+	let $prefix :=
+		if(count($parts)>1) then
+			$parts[1]
+		else
+			"core"
+	let $name := $prefix || ":" || $parts[last()]
+	let $args := array:append($args,$params)
+	let $args := array:append($args,$dict)
+	return apply($dict($prefix)($name || "#" || array:size($args)), $args)
 };
 
 declare function raddle:process($value,$body,$params){
