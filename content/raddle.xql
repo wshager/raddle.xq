@@ -959,8 +959,8 @@ declare function raddle:load-core($location){
 declare function raddle:exec($query,$params){
 	(: FIXME retrieve default-namespace :)
 	let $core := raddle:load-core("../lib/core.xql")
-	let $frame := map { "$imports": map { "":$core } }
-	return map:new(($frame,$core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())))
+	let $frame := map:put($params,"$imports",map { "":$core })
+	return $core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())
 };
 
 declare function raddle:process($value,$body,$params){
