@@ -51,11 +51,10 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
-	let $x := console:log($args)
-	let $args := array:for-each($args,function($_){
-		let $n := console:log(inspect:inspect-function($_)) return $_($frame) })
-	let $binding := core:bind($body,core:tuple($args,map{}),$type)
-	return map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),$binding))
+	if(map:contains($frame,"$transpile")) then
+		"declare function" || $name || "(" || $args || ") as " || $type || " {" || $body || "}"
+	else
+		map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),core:bind($body,core:tuple($args,$frame),$type)))
 };
 
 declare function core:typecheck($val,$type){
@@ -76,7 +75,6 @@ declare function core:typegen($type,$name,$body) {
 		$name
 	else
 		codepoints-to-string(reverse(tail(reverse($cp))))
-	let $nu := console:log(($type,$name))
 	return
 		if($body instance of function() as item()) then
 			function($val,$context) {
@@ -107,8 +105,8 @@ declare function core:typegen($type,$name) {
 		codepoints-to-string(reverse(tail(reverse($cp))))
 	return
 		function($val,$context) {
-			let $n := core:typecheck($val,$type)
-			return map:put($context,$name,$val)
+(:			let $n := core:typecheck($val,$type):)
+			map:put($context,$name,$val)
 		}
 };
 
@@ -153,13 +151,17 @@ declare function core:integer($name,$val,$body,$context) {
 };
 
 declare function core:seq($value,$context) {
-	array:fold-left($value,$context,function($pre,$cur){
+	core:fold-left($value,$context,function($pre,$cur){
 		map:new(($pre,core:exec($cur,$pre)))
 	})
 };
 
 declare function core:add($a,$b) {
 	$a + $b
+};
+
+declare function core:subtract($a,$b) {
+	$a - $b
 };
 
 declare function core:resolve-function($frame,$name){
@@ -178,15 +180,61 @@ declare function core:exec($value,$frame){
 	core:exec($value,$frame,false())
 };
 
+declare function core:fold-left($array,$zero,$function){
+	if(array:size($array) eq 0) then
+		$zero
+	else
+		core:fold-left(array:tail($array), $function($zero, array:head($array)), $function )
+};
+
+declare function core:for-each($array,$function){
+	core:for-each($array,$function,[])
+};
+
+declare function core:for-each($array,$function,$ret){
+	if(array:size($array) eq 0) then
+		$ret
+	else
+		core:for-each(array:tail($array), $function, array:append($ret,$function(array:head($array))))
+};
+
+declare function core:process-args($frame,$args){
+	array:for-each($args,function($arg){
+		if($arg instance of array(item()?)) then
+			core:for-each($arg,function($_){
+				core:exec($_,$frame,true())
+			})
+		else if($arg instance of map(xs:string,item()?)) then
+			core:exec($arg,$frame)
+		else if($arg eq ".") then
+			$frame("0")
+		else if($arg eq "$") then
+			$frame
+(:		else if($arg eq "$$") then:)
+(:			$context:)
+		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
+			$frame(replace($arg,"^\$",""))
+		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
+			core:resolve-function($frame,$arg)
+		else
+			$arg
+	})
+};
+
 declare function core:exec($value,$frame,$top){
 	(: if sequence, call core:seq, else call core:function :)
 	(: pass the context through sequence with function calls :)
 	(: global context consists of flags, functions, variables, prefix mapping, :)
 	(: frame context is used to store params and local variables :)
 	if($value instance of array(item()?)) then
-		array:fold-left($value,$frame,function($pre,$cur){
-			map:new(($pre,core:exec($cur,$pre,$top)))
-		})
+		if(map:contains($frame,"$transpile")) then
+			core:fold-left($value,"",function($pre,$cur){
+				core:exec($cur,$pre,$top)
+			})
+		else
+			core:fold-left($value,$frame,function($pre,$cur){
+				core:exec($cur,$pre,$top)
+			})
 	else if($value instance of map(xs:string,item()?)) then
 		let $args := $value("args")
 		let $name :=
@@ -203,27 +251,7 @@ declare function core:exec($value,$frame,$top){
 		(: TODO the frame is an array, variable and parameter names are dereferenced first (i.e. referenced by their order) :)
 		(: the frame is a mutable (map) and is passed down the entire program. it relies on the purity of functions for immutability :)
 		let $function := function($frame){
-			let $nu := console:log(inspect:inspect-function(core:resolve-function($frame,$name))) return
-			apply(core:resolve-function($frame,$name),array:for-each($args,function($arg){
-				let $nu := console:log($arg) return
-				if($arg instance of array(item()?)) then
-					core:exec($arg,$frame,true())
-				else if($arg instance of map(xs:string,item()?)) then
-					core:exec($arg,$frame)
-				else if($arg eq ".") then
-					$frame("0")
-				else if($arg eq "$") then
-					$frame
-		(:		else if($arg eq "$$") then:)
-		(:			$context:)
-				else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
-					$frame(replace($arg,"^\$",""))
-				else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
-					(: where does it reside? in imports or in exports? :)
-					core:resolve-function($frame,$arg)
-				else
-					$arg
-			}))
+			apply(core:resolve-function($frame,$name),core:process-args($frame,$args))
 		}
 		return
 			if($top) then
@@ -231,7 +259,7 @@ declare function core:exec($value,$frame,$top){
 			else
 				$function
 	else
-		raddle:serialize($value,map{})
+		raddle:serialize($value,$frame)
 };
 
 declare function core:import($frame,$prefix,$uri){
@@ -269,11 +297,14 @@ declare function core:module($frame,$prefix,$ns,$desc){
 	(: any function in module is a function or var declaration ! :)
 	(: TODO context for functions is a module, context for imports also (i.e. mappings) :)
 	(: BUT imports should be reused, so they're inserted into a global context... (and so may be mutable) :)
-	map:new(($frame, map {
-		"$prefix": $prefix,
-		"$uri": $ns,
-		"$description": $desc,
-		"$functions": map {},
-		"$exports": map {}
-	}))
+	if(map:contains($frame,"$transpile")) then
+		concat("module namespace ", $prefix, "=&quot;", $ns, "&quot;&#10;(:",$desc,":)")
+	else
+		map:new(($frame, map {
+			"$prefix": $prefix,
+			"$uri": $ns,
+			"$description": $desc,
+			"$functions": map {},
+			"$exports": map {}
+		}))
 };
