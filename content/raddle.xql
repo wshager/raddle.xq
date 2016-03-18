@@ -935,41 +935,32 @@ declare function raddle:use($value,$params){
 	)
 };
 
-declare function raddle:load-module($location){
-	let $desc := inspect:inspect-module(xs:anyURI($location))/function
+
+declare function raddle:load-core($location){
+	(: we want to be able to call use with only mapped prefixes, but they have to be imported (except core) :)
+	(: when a function in the current module gets called, we want to call it with prefix even if it's core :)
+	(: we want to have a separate prefix mapping for each module :)
+	(: map to our prefix! :)
+	let $module := inspect:inspect-module(xs:anyURI($location))
 	let $fns := inspect:module-functions(xs:anyURI($location))
 	return
-		map:new(
-			for $fn at $i in $desc return
-				map:entry($fn/@name || "#" || count($fn/argument),$fns[$i])
-		)
+		map {
+			"$uri":$module/@uri,
+			"$prefix":$module/@prefix,
+			"$location":$module/@location,
+			"$exports":
+				map:new(
+					for $fn-desc at $i in $module/function return
+						map:entry($fn-desc/@name || "#" || count($fn-desc/argument),$fns[$i])
+				)
+		}
 };
 
-declare function raddle:exec($value,$params){
-	raddle:exec($value,$params,map { "core": raddle:load-module("../lib/core.xql") })
-};
-
-declare function raddle:exec($value,$params,$dict){
-	(: if sequence, call core:seq, else call core:function :)
-	(: if import is a native module, convert it into an object :)
-	(: each core entry treats it's own params :)
-	(: the top is usually a module or a sequence of functions, imports and a body :)
-	let $name :=
-		if($value("name") eq "") then
-			"seq"
-		else
-			$value("name")
-	let $args := $value("args")
-	let $parts := tokenize($name,":")
-	let $prefix :=
-		if(count($parts)>1) then
-			$parts[1]
-		else
-			"core"
-	let $name := $prefix || ":" || $parts[last()]
-	let $args := array:append($args,$params)
-	let $args := array:append($args,$dict)
-	return apply($dict($prefix)($name || "#" || array:size($args)), $args)
+declare function raddle:exec($query,$params){
+	(: FIXME retrieve default-namespace :)
+	let $core := raddle:load-core("../lib/core.xql")
+	let $frame := map { "$imports": map { "":$core } }
+	return map:new(($frame,$core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())))
 };
 
 declare function raddle:process($value,$body,$params){
