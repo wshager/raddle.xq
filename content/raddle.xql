@@ -989,7 +989,7 @@ declare function raddle:exec($query,$params){
 		else
 			let $frame := map:put($params,"$imports",map { "":$core })
 			return
-			$core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())
+			$core("$exports")("core:exec#1")(raddle:parse($query,$params))($frame)
 };
 
 declare function raddle:process($value,$body,$params){

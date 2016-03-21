@@ -26,7 +26,8 @@ declare function core:cat($a1,$a2,$a3){
 
 declare function core:bind($fn,$tuple,$type) {
 	function($vals) {
-		$fn($tuple($vals))
+		let $null := console:log(map:keys($tuple($vals)))
+		return $fn($tuple($vals))
 	}
 };
 
@@ -148,7 +149,7 @@ declare function core:integer($name,$val,$body,$context) {
 
 declare function core:seq($value,$context) {
 	core:fold-left($value,$context,function($pre,$cur){
-		map:new(($pre,core:exec($cur,$pre)))
+		core:exec($cur)($pre)
 	})
 };
 
@@ -170,10 +171,6 @@ declare function core:resolve-function($frame,$name){
 		let $module := $frame("$imports")($prefix)
 		let $theirname := concat(if($module("$prefix")) then $module("$prefix") || ":" else "", $parts[last()])
 		return $module("$exports")($theirname)
-};
-
-declare function core:exec($value,$frame){
-	core:exec($value,$frame,false())
 };
 
 declare function core:fold-left($array,$zero,$function){
@@ -216,14 +213,38 @@ declare function core:for-each-at($array,$function,$ret,$at){
 		core:for-each-at(array:tail($array), $function, array:append($ret,$function(array:head($array), $at)), $at + 1)
 };
 
+declare function core:is-fn-seq($value) {
+	if(array:size($value) eq 0) then
+		()
+	else
+		distinct-values(array:flatten(
+			array:for-each($value,function($_){
+				if($_ instance of map(xs:string, item()?)) then
+					(: only check strings in sequence :)
+					core:is-fn-seq($_("args"))
+				else if($_ instance of xs:string and matches($_,"^[\$\.]")) then
+					$_
+				else
+					()
+			})
+		))
+};
+
 declare function core:process-args($frame,$args){
 	array:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
-			core:for-each($arg,function($_){
-				core:exec($_,$frame,true())
-			})
+			(: TODO check: composition or sequence? :)
+			let $fn-seq := core:is-fn-seq($arg)
+			let $n := console:log($fn-seq)
+			return
+			if(empty($fn-seq)) then
+				core:for-each($arg,function($_){
+					core:exec($_)($frame)
+				})
+			else
+				core:exec($arg)($frame)
 		else if($arg instance of map(xs:string,item()?)) then
-			core:exec($arg,$frame)
+			core:exec($arg)($frame)
 		else if($arg eq ".") then
 			$frame("0")
 		else if($arg eq "$") then
@@ -239,15 +260,24 @@ declare function core:process-args($frame,$args){
 	})
 };
 
-declare function core:exec($value,$frame,$top){
+declare function core:exec($value){
+	core:exec($value)
+};
+
+declare function core:exec($value){
 	(: if sequence, call core:seq, else call core:function :)
 	(: pass the context through sequence with function calls :)
 	(: global context consists of flags, functions, variables, prefix mapping, :)
 	(: frame context is used to store params and local variables :)
 	if($value instance of array(item()?)) then
-		core:fold-left($value,$frame,function($pre,$cur){
-			core:exec($cur,$pre,$top)
-		})
+		let $function := function($frame) {
+			core:fold-left($value,$frame,function($pre,$cur){
+				let $fn := core:exec($cur)
+				let $n := console:log($cur)
+				return $fn($pre)
+			})
+		}
+		return $function
 	else if($value instance of map(xs:string,item()?)) then
 		let $args := $value("args")
 		let $name :=
@@ -263,16 +293,13 @@ declare function core:exec($value,$frame,$top){
 		(: the function should receive a reference to the real function by way of closure :)
 		(: TODO the frame is an array, variable and parameter names are dereferenced first (i.e. referenced by their order) :)
 		(: the frame is a mutable (map) and is passed down the entire program. it relies on the purity of functions for immutability :)
-		let $function := function($frame){
+		return function($frame){
 			apply(core:resolve-function($frame,$name),core:process-args($frame,$args))
 		}
-		return
-			if($top) then
-				$function($frame)
-			else
-				$function
 	else
-		$value
+		function($frame){
+			$value
+		}
 };
 
 declare function core:import($frame,$prefix,$uri){
@@ -301,7 +328,7 @@ declare function core:import($frame,$prefix,$uri,$location){
 				}
 		else
 			let $src := util:binary-to-string(util:binary-doc($location))
-			return core:exec(raddle:parse($src,$frame),$frame,true())
+			return core:exec(raddle:parse($src,$frame))($frame)
 	return map:put($frame,"imports",map:put($frame("imports"),$prefix,$core))
 };
 
