@@ -35,7 +35,7 @@ declare function core:tuple($params,$context) {
 		(: TODO create fold-left-at :)
 		map:new((for $i in 1 to array:size($params)
 			return
-			$params($i)($vals($i),$context)))
+			$params($i)($vals($i),$i,$context)))
 	}
 };
 
@@ -51,13 +51,10 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
-	if(map:contains($frame,"$transpile")) then
-		"declare function" || $name || "(" || $args || ") as " || $type || " {" || $body || "}"
-	else
-		map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),core:bind($body,core:tuple($args,$frame),$type)))
+	map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),core:bind($body,core:tuple($args,$frame),$type)))
 };
 
-declare function core:typecheck($val,$type){
+declare function core:typecheck($type,$val){
 	if(util:eval("$val instance of " || $type)) then
 		console:log(($val,$type))
 	else
@@ -104,9 +101,8 @@ declare function core:typegen($type,$name) {
 	else
 		codepoints-to-string(reverse(tail(reverse($cp))))
 	return
-		function($val,$context) {
-(:			let $n := core:typecheck($val,$type):)
-			map:put($context,$name,$val)
+		function($val,$i,$context) {
+			map:put($context,if($name eq "") then string($i) else $name,$val)
 		}
 };
 
@@ -156,7 +152,7 @@ declare function core:seq($value,$context) {
 	})
 };
 
-declare function core:add($a,$b) {
+declare function core:add($a as xs:integer,$b as xs:integer) {
 	$a + $b
 };
 
@@ -187,6 +183,17 @@ declare function core:fold-left($array,$zero,$function){
 		core:fold-left(array:tail($array), $function($zero, array:head($array)), $function )
 };
 
+declare function core:fold-left-at($array,$zero,$function) {
+	core:fold-left-at($array,$zero,$function,1)
+};
+
+declare function core:fold-left-at($array,$zero,$function,$at){
+	if(array:size($array) eq 0) then
+		$zero
+	else
+		core:fold-left-at(array:tail($array), $function($zero, array:head($array), $at), $function, $at + 1)
+};
+
 declare function core:for-each($array,$function){
 	core:for-each($array,$function,[])
 };
@@ -196,6 +203,17 @@ declare function core:for-each($array,$function,$ret){
 		$ret
 	else
 		core:for-each(array:tail($array), $function, array:append($ret,$function(array:head($array))))
+};
+
+declare function core:for-each-at($array,$function){
+	core:for-each-at($array,$function,[],1)
+};
+
+declare function core:for-each-at($array,$function,$ret,$at){
+	if(array:size($array) eq 0) then
+		$ret
+	else
+		core:for-each-at(array:tail($array), $function, array:append($ret,$function(array:head($array), $at)), $at + 1)
 };
 
 declare function core:process-args($frame,$args){
@@ -227,14 +245,9 @@ declare function core:exec($value,$frame,$top){
 	(: global context consists of flags, functions, variables, prefix mapping, :)
 	(: frame context is used to store params and local variables :)
 	if($value instance of array(item()?)) then
-		if(map:contains($frame,"$transpile")) then
-			core:fold-left($value,"",function($pre,$cur){
-				core:exec($cur,$pre,$top)
-			})
-		else
-			core:fold-left($value,$frame,function($pre,$cur){
-				core:exec($cur,$pre,$top)
-			})
+		core:fold-left($value,$frame,function($pre,$cur){
+			core:exec($cur,$pre,$top)
+		})
 	else if($value instance of map(xs:string,item()?)) then
 		let $args := $value("args")
 		let $name :=
@@ -259,7 +272,7 @@ declare function core:exec($value,$frame,$top){
 			else
 				$function
 	else
-		raddle:serialize($value,$frame)
+		$value
 };
 
 declare function core:import($frame,$prefix,$uri){
@@ -297,14 +310,11 @@ declare function core:module($frame,$prefix,$ns,$desc){
 	(: any function in module is a function or var declaration ! :)
 	(: TODO context for functions is a module, context for imports also (i.e. mappings) :)
 	(: BUT imports should be reused, so they're inserted into a global context... (and so may be mutable) :)
-	if(map:contains($frame,"$transpile")) then
-		concat("module namespace ", $prefix, "=&quot;", $ns, "&quot;&#10;(:",$desc,":)")
-	else
-		map:new(($frame, map {
-			"$prefix": $prefix,
-			"$uri": $ns,
-			"$description": $desc,
-			"$functions": map {},
-			"$exports": map {}
-		}))
+	map:new(($frame, map {
+		"$prefix": $prefix,
+		"$uri": $ns,
+		"$description": $desc,
+		"$functions": map {},
+		"$exports": map {}
+	}))
 };
