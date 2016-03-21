@@ -936,7 +936,7 @@ declare function raddle:use($value,$params){
 };
 
 
-declare function raddle:load-core($location){
+declare function raddle:load-module($location){
 	(: we want to be able to call use with only mapped prefixes, but they have to be imported (except core) :)
 	(: when a function in the current module gets called, we want to call it with prefix even if it's core :)
 	(: we want to have a separate prefix mapping for each module :)
@@ -948,6 +948,25 @@ declare function raddle:load-core($location){
 			"$uri":$module/@uri,
 			"$prefix":$module/@prefix,
 			"$location":$module/@location,
+			"$functions":
+				[for-each($module/function,function($fn-desc) {
+					map {
+						"name":$fn-desc/@name,
+						"arguments":[
+							for-each($fn-desc/argument,function($arg){
+								map {
+									"var": $arg/@var,
+									"type": $arg/@type,
+									"cardinality":
+										switch($arg/@cardinality)
+											case "zero or more" return "*"
+											case "zero or one" return "?"
+											default return ""
+								}
+							})
+						]
+					}
+				})],
 			"$exports":
 				map:new(
 					for $fn-desc at $i in $module/function return
@@ -958,9 +977,19 @@ declare function raddle:load-core($location){
 
 declare function raddle:exec($query,$params){
 	(: FIXME retrieve default-namespace :)
-	let $core := raddle:load-core("../lib/core.xql")
-	let $frame := map:put($params,"$imports",map { "":$core })
-	return $core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())
+	let $core := raddle:load-module("../lib/core.xql")
+	return
+		if(map:contains($params,"$transpile")) then
+			let $module := raddle:load-module("../lib/transpile.xql")
+			let $frame := map:put($params,"$imports",map {
+				"core":$core,
+				"":$module
+			})
+			return $module("$exports")("tp:transpile#3")(raddle:parse($query,$params),$frame,true())
+		else
+			let $frame := map:put($params,"$imports",map { "":$core })
+			return
+			$core("$exports")("core:exec#3")(raddle:parse($query,$params),$frame,true())
 };
 
 declare function raddle:process($value,$body,$params){
