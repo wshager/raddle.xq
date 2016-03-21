@@ -26,8 +26,7 @@ declare function core:cat($a1,$a2,$a3){
 
 declare function core:bind($fn,$tuple,$type) {
 	function($vals) {
-		let $null := console:log(map:keys($tuple($vals)))
-		return $fn($tuple($vals))
+		$fn($tuple($vals))
 	}
 };
 
@@ -93,7 +92,7 @@ declare function core:typegen($type,$name,$body) {
 
 declare function core:typegen($type,$name) {
 	let $cp := string-to-codepoints($name)
-	let $suffix := if($cp[last()] = (42,43,45,63)) then
+	let $suffix := if($cp[last()] = (42,43,45,63,95)) then
 		codepoints-to-string($cp[last()])
 		else
 				""
@@ -233,24 +232,21 @@ declare function core:is-fn-seq($value) {
 declare function core:process-args($frame,$args){
 	array:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
-			(: TODO check: composition or sequence? :)
+			(: check: composition or sequence? :)
 			let $fn-seq := core:is-fn-seq($arg)
-			let $n := console:log($fn-seq)
 			return
-			if(empty($fn-seq)) then
-				core:for-each($arg,function($_){
-					core:exec($_)($frame)
-				})
-			else
-				core:exec($arg)($frame)
+				if(empty($fn-seq)) then
+					core:for-each($arg,function($_){
+						core:exec($_)($frame)
+					})
+				else
+					core:exec($arg)($frame)
 		else if($arg instance of map(xs:string,item()?)) then
-			core:exec($arg)($frame)
+			core:exec($arg)
 		else if($arg eq ".") then
 			$frame("0")
 		else if($arg eq "$") then
 			$frame
-(:		else if($arg eq "$$") then:)
-(:			$context:)
 		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
 			$frame(replace($arg,"^\$",""))
 		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
@@ -272,9 +268,7 @@ declare function core:exec($value){
 	if($value instance of array(item()?)) then
 		let $function := function($frame) {
 			core:fold-left($value,$frame,function($pre,$cur){
-				let $fn := core:exec($cur)
-				let $n := console:log($cur)
-				return $fn($pre)
+				core:exec($cur)($pre)
 			})
 		}
 		return $function
@@ -297,6 +291,12 @@ declare function core:exec($value){
 			apply(core:resolve-function($frame,$name),core:process-args($frame,$args))
 		}
 	else
+(:		let $value := :)
+(:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
+(:				replace($value,"^_","\$_" || $frame("$at")):)
+(:			else:)
+(:				$value:)
+(:		return:)
 		function($frame){
 			$value
 		}
