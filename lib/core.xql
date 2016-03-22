@@ -61,48 +61,45 @@ declare function core:typecheck($type,$val){
 		console:log("Not of correct type")
 };
 
-declare function core:typegen($type,$name,$body) {
+declare function core:get-name-suffix($name){
 	let $cp := string-to-codepoints($name)
-	let $suffix :=
-		if($cp[last()] = (42,43,45,63)) then
-			codepoints-to-string($cp[last()])
-		else
-			""
-	let $name := if($suffix eq "") then
-		$name
-	else
-		codepoints-to-string(reverse(tail(reverse($cp))))
 	return
-		if($body instance of function() as item()) then
-			function($val,$context) {
-				$body(map:put($context,$name,$val))
-			}
-		else if($body) then
-			(: default param value generator:)
-			function($null,$context) {
-				(: _check($body,$type);:)
-				map:put($context,$name,$body)
-			}
+		if($cp[last()] = (42,43,45,63,95)) then
+			(codepoints-to-string(reverse(tail(reverse($cp)))),codepoints-to-string($cp[last()]))
 		else
-			function($val,$context) {
+			($name,"")
+};
+
+declare function core:typegen($type,$name,$val) {
+	let $parts := core:get-name-suffix($name)
+	let $name := $parts[1]
+	let $suffix := $parts[2]
+	return
+(:		if($body instance of function() as item()) then:)
+(:			(: create closure over variable :):)
+(:			function($val,$context) {:)
+(:				$body(map:put($context,$name,$val)):)
+(:			}:)
+(:		else if($body) then:)
+(:			(: default param value generator:):)
+(:			function($null,$context) {:)
+(:				(: _check($body,$type);:):)
+(:				map:put($context,$name,$body):)
+(:			}:)
+(:		else:)
+			function($frame) {
 				(: _check($val,$type);:)
-				map:put($context,$name,$val)
+				map:put($frame,$name,$val)
 			}
 };
 
 declare function core:typegen($type,$name) {
-	let $cp := string-to-codepoints($name)
-	let $suffix := if($cp[last()] = (42,43,45,63,95)) then
-		codepoints-to-string($cp[last()])
-		else
-				""
-	let $name := if($suffix eq "") then
-		$name
-	else
-		codepoints-to-string(reverse(tail(reverse($cp))))
+	let $parts := core:get-name-suffix($name)
+	let $name := $parts[1]
+	let $suffix := $parts[2]
 	return
-		function($val,$i,$context) {
-			map:put($context,if($name eq "") then string($i) else $name,$val)
+		function($val,$i,$frame) {
+			map:put($frame,if($name eq "") then string($i) else $name,$val)
 		}
 };
 
@@ -118,13 +115,13 @@ declare function core:integer($name,$val) {
 	core:typegen("xs:integer",$name,$val)
 };
 
-declare function core:integer($name,$val,$context) {
-	core:typegen("xs:integer",$name)($val,$context)
-};
-
-declare function core:integer($name,$val,$body,$context) {
-	core:typegen("xs:integer",$name,$body)($val,$context)
-};
+(:declare function core:integer($name,$val,$context) {:)
+(:	core:typegen("xs:integer",$name)($val,$context):)
+(:};:)
+(::)
+(:declare function core:integer($name,$val,$body,$context) {:)
+(:	core:typegen("xs:integer",$name,$body)($val,$context):)
+(:};:)
 
 declare function core:string() {
 	"xs:string"
@@ -137,14 +134,14 @@ declare function core:string($name) {
 declare function core:string($name,$val) {
 	core:typegen("xs:string",$name,$val)
 };
-
-declare function core:string($name,$val,$context) {
-	core:typegen("xs:string",$name)($val,$context)
-};
-
-declare function core:integer($name,$val,$body,$context) {
-	core:typegen("xs:string",$name,$body)($val,$context)
-};
+(::)
+(:declare function core:string($name,$val,$context) {:)
+(:	core:typegen("xs:string",$name)($val,$context):)
+(:};:)
+(::)
+(:declare function core:integer($name,$val,$body,$context) {:)
+(:	core:typegen("xs:string",$name,$body)($val,$context):)
+(:};:)
 
 declare function core:seq($value,$context) {
 	core:fold-left($value,$context,function($pre,$cur){
