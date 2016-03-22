@@ -2,9 +2,9 @@ xquery version "3.1";
 
 module namespace core="http://raddle.org/core";
 
-import module namespace raddle="http://lagua.nl/lib/raddle" at "/db/apps/raddle.xq/content/raddle.xql";
-import module namespace op="http://www.w3.org/2005/xpath-functions/op" at "/db/apps/raddle.xq/lib/op.xql";
-import module namespace n="http://raddle.org/n" at "/db/apps/raddle.xq/lib/n.xql";
+import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
+import module namespace op="http://www.w3.org/2005/xpath-functions/op" at "op.xql";
+import module namespace n="http://raddle.org/native-xq" at "n.xql";
 import module namespace console="http://exist-db.org/xquery/console";
 
 declare function core:elem($name,$content){
@@ -15,28 +15,8 @@ declare function core:attr($name,$content){
 	n:attribute($name,$content)
 };
 
-declare function core:cat($a1,$a2){
-	concat($a1,$a2)
-};
-
-
-declare function core:cat($a1,$a2,$a3){
-	concat($a1,$a2,$a3)
-};
-
-declare function core:bind($fn,$tuple,$type) {
-	function($vals) {
-		$fn($tuple($vals))
-	}
-};
-
-declare function core:tuple($params,$context) {
-	function($vals) {
-		(: TODO create fold-left-at :)
-		map:new((for $i in 1 to array:size($params)
-			return
-			$params($i)($vals($i),$i,$context)))
-	}
+declare function core:text($content){
+	n:text($content)
 };
 
 declare function core:define($frame,$name,$desc,$args,$type,$body) {
@@ -51,7 +31,7 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
-	map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),core:bind($body,core:tuple($args,$frame),$type)))
+	map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$frame,$type)))
 };
 
 declare function core:typecheck($type,$val){
@@ -143,20 +123,6 @@ declare function core:string($name,$val) {
 (:	core:typegen("xs:string",$name,$body)($val,$context):)
 (:};:)
 
-declare function core:seq($value,$context) {
-	core:fold-left($value,$context,function($pre,$cur){
-		core:exec($cur)($pre)
-	})
-};
-
-declare function core:add($a as xs:integer,$b as xs:integer) {
-	$a + $b
-};
-
-declare function core:subtract($a,$b) {
-	$a - $b
-};
-
 declare function core:resolve-function($frame,$name){
 	(: TODO move to bindings :)
 	if(map:contains($frame,"$prefix") and matches($name,"^" || $frame("$prefix") || ":")) then
@@ -167,6 +133,33 @@ declare function core:resolve-function($frame,$name){
 		let $module := $frame("$imports")($prefix)
 		let $theirname := concat(if($module("$prefix")) then $module("$prefix") || ":" else "", $parts[last()])
 		return $module("$exports")($theirname)
+};
+
+declare function core:process-args($frame,$args){
+	core:for-each($args,function($arg){
+		if($arg instance of array(item()?)) then
+			(: check: composition or sequence? :)
+			let $fn-seq := core:is-fn-seq($arg)
+			return
+				if(empty($fn-seq)) then
+					core:for-each($arg,function($_){
+						n:eval($_)($frame)
+					})
+				else
+					n:eval($arg)($frame)
+		else if($arg instance of map(xs:string,item()?)) then
+			n:eval($arg)
+		else if($arg eq ".") then
+			$frame("0")
+		else if($arg eq "$") then
+			$frame
+		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
+			$frame(replace($arg,"^\$",""))
+		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
+			core:resolve-function($frame,$arg)
+		else
+			$arg
+	})
 };
 
 declare function core:fold-left($array,$zero,$function){
@@ -226,79 +219,6 @@ declare function core:is-fn-seq($value) {
 		))
 };
 
-declare function core:process-args($frame,$args){
-	array:for-each($args,function($arg){
-		if($arg instance of array(item()?)) then
-			(: check: composition or sequence? :)
-			let $fn-seq := core:is-fn-seq($arg)
-			return
-				if(empty($fn-seq)) then
-					core:for-each($arg,function($_){
-						core:exec($_)($frame)
-					})
-				else
-					core:exec($arg)($frame)
-		else if($arg instance of map(xs:string,item()?)) then
-			core:exec($arg)
-		else if($arg eq ".") then
-			$frame("0")
-		else if($arg eq "$") then
-			$frame
-		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
-			$frame(replace($arg,"^\$",""))
-		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
-			core:resolve-function($frame,$arg)
-		else
-			$arg
-	})
-};
-
-declare function core:exec($value){
-	core:exec($value)
-};
-
-declare function core:exec($value){
-	(: if sequence, call core:seq, else call core:function :)
-	(: pass the context through sequence with function calls :)
-	(: global context consists of flags, functions, variables, prefix mapping, :)
-	(: frame context is used to store params and local variables :)
-	if($value instance of array(item()?)) then
-		let $function := function($frame) {
-			core:fold-left($value,$frame,function($pre,$cur){
-				core:exec($cur)($pre)
-			})
-		}
-		return $function
-	else if($value instance of map(xs:string,item()?)) then
-		let $args := $value("args")
-		let $name :=
-			if($value("name") eq "") then
-				"seq#" || array:size($args)
-			else
-				$value("name") || "#" || array:size($args)
-		(: TODO process args :)
-		(: args may contain values, variables, dots or function references :)
-		(: a dot contains the (query) context, i.e. the return value of the previous function, and is stored in index 0 (zero) of the stack context :)
-		(: if exec is called from raddle (i.e. TOP) there's frame context, but the global context is passed instead :)
-		(: else a wrapper function is returned, that applies the frame context to the function as its arguments :)
-		(: the function should receive a reference to the real function by way of closure :)
-		(: TODO the frame is an array, variable and parameter names are dereferenced first (i.e. referenced by their order) :)
-		(: the frame is a mutable (map) and is passed down the entire program. it relies on the purity of functions for immutability :)
-		return function($frame){
-			apply(core:resolve-function($frame,$name),core:process-args($frame,$args))
-		}
-	else
-(:		let $value := :)
-(:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
-(:				replace($value,"^_","\$_" || $frame("$at")):)
-(:			else:)
-(:				$value:)
-(:		return:)
-		function($frame){
-			$value
-		}
-};
-
 declare function core:import($frame,$prefix,$uri){
 	core:import($frame,$prefix,$uri,())
 };
@@ -309,23 +229,10 @@ declare function core:import($frame,$prefix,$uri,$location){
 	(: and a pointer would be inserted to the module in the global context :)
 	let $import :=
 		if(empty($location) or xmldb:get-mime-type(xs:anyURI($location)) eq "application/xquery") then
-			let $module := inspect:inspect-module(xs:anyURI($location))
-			let $fns-desc := $module/function
-			let $fns := inspect:module-functions(xs:anyURI($location))
-			return
-				map {
-					"$uri":$module/@uri,
-					"$prefix":$module/@prefix,
-					"$location":$module/@location,
-					"$exports":
-						map:new(
-							for $fn-desc at $i in $fns-desc return
-								map:entry($fn-desc/@name || "#" || count($fn-desc/argument),$fns[$i])
-						)
-				}
+			n:import($location)
 		else
 			let $src := util:binary-to-string(util:binary-doc($location))
-			return core:exec(raddle:parse($src,$frame))($frame)
+			return n:eval(raddle:parse($src,$frame))($frame)
 	return map:put($frame,"imports",map:put($frame("imports"),$prefix,$core))
 };
 
