@@ -2,6 +2,7 @@ xquery version "3.1";
 
 module namespace n="http://raddle.org/native-xq";
 import module namespace core="http://raddle.org/core" at "core.xql";
+import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 import module namespace console="http://exist-db.org/xquery/console";
 
@@ -41,21 +42,10 @@ declare function n:import($location){
 };
 
 
-declare function n:fold-left-at($array,$zero,$function) {
-	n:fold-left-at($array,$zero,$function,1)
-};
-
-declare function n:fold-left-at($array,$zero,$function,$at){
-	if(array:size($array) eq 0) then
-		$zero
-	else
-		n:fold-left-at(array:tail($array), $function($zero, array:head($array), $at), $function, $at + 1)
-};
-
 declare function n:bind($fn,$args,$frame,$type) {
-		(: FIXME frame is bound early, fold-left-at import is broken :)
-		let $tuple := function($vals) {
-		n:fold-left-at($args,$frame,function($pre,$cur,$i){
+	(: FIXME frame is bound early, fold-left-at import is broken :)
+	let $tuple := function($vals) {
+		a:fold-left-at($args,$frame,function($pre,$cur,$i){
 				$cur($vals($i),$i,$pre)
 		})
 	}
@@ -71,7 +61,7 @@ declare function n:eval($value){
 	(: frame context is used to store params and local variables :)
 	if($value instance of array(item()?)) then
 		let $function := function($frame) {
-			core:fold-left($value,$frame,function($pre,$cur){
+			a:fold-left($value,$frame,function($pre,$cur){
 					let $n := console:log($cur) return
 				n:eval($cur)($pre)
 			})
@@ -157,7 +147,7 @@ declare function n:text($content) {
 };
 
 declare function n:seq($value,$context) {
-	core:fold-left($value,$context,function($pre,$cur){
+	a:fold-left($value,$context,function($pre,$cur){
 		n:eval($cur)($pre)
 	})
 };
