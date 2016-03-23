@@ -5,33 +5,40 @@ module namespace core="http://raddle.org/core";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 import module namespace op="http://www.w3.org/2005/xpath-functions/op" at "op.xql";
 import module namespace n="http://raddle.org/native-xq" at "n.xql";
+import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace console="http://exist-db.org/xquery/console";
 
-declare function core:elem($name,$content){
+declare function core:elem($frame,$name,$content){
 	n:element($name,$content)
 };
 
-declare function core:attr($name,$content){
+declare function core:attr($frame,$name,$content){
 	n:attribute($name,$content)
 };
 
-declare function core:text($content){
+declare function core:text($frame,$content){
 	n:text($content)
 };
 
 declare function core:define($frame,$name,$desc,$args,$type,$body) {
 	(: TODO conform to eXist inspect:* argument properties :)
-	core:function(
-		map:put($frame,"$functions",map:put($frame("$functions"),$name || "#" || array:size($args),
-			map {
-				"name": $name,
-				"description": $desc
-			}
-		)),$name,$args,$type,$body)
+	map:new(($frame,
+		map:entry("$functions",core:describe($frame("$functions"),$name,$desc,$args,$type)),
+		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$frame,$type)))
+	))
+};
+
+declare function core:describe($frame,$name,$desc,$args,$type){
+	map:put($frame,$name || "#" || array:size($args),
+		map {
+			"name": $name,
+			"description": $desc
+		}
+	)
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
-	map:put($frame,"$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$frame,$type)))
+	map:put($frame,$name || "#" || array:size($args),n:bind($body,$args,$frame,$type))
 };
 
 declare function core:typecheck($type,$val){
@@ -136,13 +143,13 @@ declare function core:resolve-function($frame,$name){
 };
 
 declare function core:process-args($frame,$args){
-	core:for-each($args,function($arg){
+	a:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
 			let $fn-seq := core:is-fn-seq($arg)
 			return
 				if(empty($fn-seq)) then
-					core:for-each($arg,function($_){
+					a:for-each($arg,function($_){
 						n:eval($_)($frame)
 					})
 				else
@@ -162,45 +169,6 @@ declare function core:process-args($frame,$args){
 	})
 };
 
-declare function core:fold-left($array,$zero,$function){
-	if(array:size($array) eq 0) then
-		$zero
-	else
-		core:fold-left(array:tail($array), $function($zero, array:head($array)), $function )
-};
-
-declare function core:fold-left-at($array,$zero,$function) {
-	core:fold-left-at($array,$zero,$function,1)
-};
-
-declare function core:fold-left-at($array,$zero,$function,$at){
-	if(array:size($array) eq 0) then
-		$zero
-	else
-		core:fold-left-at(array:tail($array), $function($zero, array:head($array), $at), $function, $at + 1)
-};
-
-declare function core:for-each($array,$function){
-	core:for-each($array,$function,[])
-};
-
-declare function core:for-each($array,$function,$ret){
-	if(array:size($array) eq 0) then
-		$ret
-	else
-		core:for-each(array:tail($array), $function, array:append($ret,$function(array:head($array))))
-};
-
-declare function core:for-each-at($array,$function){
-	core:for-each-at($array,$function,[],1)
-};
-
-declare function core:for-each-at($array,$function,$ret,$at){
-	if(array:size($array) eq 0) then
-		$ret
-	else
-		core:for-each-at(array:tail($array), $function, array:append($ret,$function(array:head($array), $at)), $at + 1)
-};
 
 declare function core:is-fn-seq($value) {
 	if(array:size($value) eq 0) then
