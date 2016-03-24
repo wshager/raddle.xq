@@ -4,7 +4,6 @@ module namespace n="http://raddle.org/native-xq";
 import module namespace core="http://raddle.org/core" at "core.xql";
 import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
-import module namespace console="http://exist-db.org/xquery/console";
 
 declare function n:import($location){
 		let $module := inspect:inspect-module(xs:anyURI($location))
@@ -42,15 +41,14 @@ declare function n:import($location){
 };
 
 
-declare function n:bind($fn,$args,$frame,$type) {
-	(: FIXME frame is bound early, fold-left-at import is broken :)
-	let $tuple := function($vals) {
-		a:fold-left-at($args,$frame,function($pre,$cur,$i){
-				$cur($vals($i),$i,$pre)
-		})
-	}
-	return function($vals) {
-		$fn($tuple($vals))
+declare function n:bind($fn,$args,$type) {
+	(: frame is bound late :)
+	function($vals) {
+		function($frame){
+			$fn(a:fold-left-at($args,$frame,function($pre,$cur,$i){
+				$cur($pre,$vals($i),$i)
+			}))
+		}
 	}
 };
 
@@ -62,7 +60,6 @@ declare function n:eval($value){
 	if($value instance of array(item()?)) then
 		let $function := function($frame) {
 			a:fold-left($value,$frame,function($pre,$cur){
-					let $n := console:log($cur) return
 				n:eval($cur)($pre)
 			})
 		}
