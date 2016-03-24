@@ -6,7 +6,7 @@ import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 
 declare function n:import($location){
-		let $module := inspect:inspect-module(xs:anyURI($location))
+	let $module := inspect:inspect-module(xs:anyURI($location))
 	let $fns := inspect:module-functions(xs:anyURI($location))
 	return
 		map {
@@ -42,11 +42,11 @@ declare function n:import($location){
 
 
 declare function n:bind($fn,$args,$type) {
-	(: frame is bound late :)
-	function($vals) {
-		function($frame){
+	(: frame is bound late, exported function has to be called with frame again :)
+	function($frame){
+		function($vals) {
 			$fn(a:fold-left-at($args,$frame,function($pre,$cur,$i){
-				$cur($pre,$vals($i),$i)
+				$cur($frame)($pre,$vals($i),$i)
 			}))
 		}
 	}
@@ -80,7 +80,7 @@ declare function n:eval($value){
 		(: TODO the frame is an array, variable and parameter names are dereferenced first (i.e. referenced by their order) :)
 		(: the frame is a mutable (map) and is passed down the entire program. it relies on the purity of functions for immutability :)
 		return function($frame){
-			apply(core:resolve-function($frame,$name),core:process-args($frame,$args))
+			core:apply($frame,$name,$args)
 		}
 	else
 (:		let $value := :)
