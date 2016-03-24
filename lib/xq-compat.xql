@@ -394,7 +394,6 @@ declare function xqc:anon($head,$lastseen,$parts,$ret) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	if($no eq 21.06) then
-		let $n := console:log($ret) return
 		xqc:anon($next,xqc:appd($lastseen,$no),tail($rest),concat($ret,"=#21#06=(("))
 	else
 		let $old := $lastseen
@@ -524,7 +523,7 @@ declare function xqc:block($parts,$ret){
 					else if($no eq 23.04) then
 						xqc:annot($rest,$ret)
 					else
-						xqc:body($rest,$ret)
+						xqc:body($parts,$ret)
 			else if(matches($val,";")) then
 				if(empty($rest)) then
 					$ret
@@ -613,7 +612,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 	return
 		if(matches($arg,"\p{L}+")) then
 			if($arg = "if" or round($key) = 21) then
-				"(^|\s|,|\()" || $arg || "\s?"
+				$arg || "\s?"
 			else if($arg = "then") then
 				"\)\s*" || $arg
 			else
@@ -634,9 +633,9 @@ declare function xqc:prepare-for-regex($key) as xs:string {
 	return
 		(: constructors :)
 		if($key eq 21.06) then
-			"(^|\s|,)?" || $arg || "[\s" || $xqc:ncname || ":]*\s*\([\s\$" || $xqc:ncname || ",:]*\)\s*=#20#06="
+			"(^|\s|,|\(|;)" || $arg || "[\s" || $xqc:ncname || ":]*\s*\([\s\$" || $xqc:ncname || ",:]*\)\s*=#20#06="
 		else
-			"(^|\s)" || $arg || "[\s\$" || $xqc:ncname || ",:]*=#20#06"
+			"(^|\s|,|\(|;)" || $arg || "[\s\$" || $xqc:ncname || ",:]*=#20#06"
 };
 
 
