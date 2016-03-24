@@ -21,11 +21,15 @@ declare function core:text($frame,$content){
 };
 
 declare function core:define($frame,$name,$desc,$args,$type,$body) {
-	(: TODO conform to eXist inspect:* argument properties :)
-	let $n:= console:log($args($frame)) return
+	(: print a nice picture for the params album... :)
+	let $map := a:fold-left-at($args,map{},function($pre,$_,$i){
+		$_($frame)($pre,(),$i)
+	})
+	let $n := console:log($map)
+	return
 	map:new(($frame,
 		map:entry("$functions",core:describe($frame("$functions"),$name,$desc,$args,$type)),
-		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$type)))
+		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$type)($frame)))
 	))
 };
 
@@ -39,6 +43,7 @@ declare function core:describe($frame,$name,$desc,$args,$type){
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
+	(: body+args are quotations :)
 	map:put($frame,$name || "#" || array:size($args),n:bind($body,$args,$type))
 };
 
@@ -87,7 +92,9 @@ declare function core:typegen($type,$name) {
 	let $suffix := $parts[2]
 	return
 		function($frame,$val,$i) {
-			map:put($frame,if($name eq "") then string($i) else $name,$val)
+			(: add type to map just for posterity :)
+			let $val := if(empty($val)) then $type else $val
+			return map:put($frame,if($name eq "") then string($i) else $name,$val)
 		}
 };
 
@@ -132,10 +139,27 @@ declare function core:string($name,$val) {
 (:	core:typegen("xs:string",$name,$body)($val,$context):)
 (:};:)
 
+declare function core:apply($frame,$name,$args){
+	let $self := core:is-current-module($frame,$name)
+	let $f := core:resolve-function($frame, $name, $self)
+	return
+		if($self) then
+			$f(core:process-args($frame,$args))
+		else
+			apply($f,core:process-args($frame,$args))
+};
+
+declare %private function core:is-current-module($frame,$name){
+	map:contains($frame,"$prefix") and matches($name,"^" || $frame("$prefix") || ":")
+};
+
 declare function core:resolve-function($frame,$name){
+	core:resolve-function($frame,$name,core:is-current-module($frame,$name))
+};
+
+declare function core:resolve-function($frame,$name,$self){
 	(: TODO move to bindings :)
-	let $n: = console:log("resolving " || $name || $frame instance of map(xs:string,item()?)) return
-	if(map:contains($frame,"$prefix") and matches($name,"^" || $frame("$prefix") || ":")) then
+	if($self) then
 		$frame("$exports")($name)
 	else
 		let $parts := tokenize($name,":")
@@ -152,12 +176,12 @@ declare function core:process-args($frame,$args){
 			(: check: composition or sequence? :)
 			let $fn-seq := core:is-fn-seq($arg)
 			return
-				if(empty($fn-seq)) then
-					a:for-each($arg,function($_){
-						n:eval($_)($frame)
-					})
+				if($fn-seq) then
+					n:eval($arg)
 				else
-					n:eval($arg)($frame)
+					a:for-each($arg,function($_){
+						n:eval($_)
+					})
 		else if($arg instance of map(xs:string,item()?)) then
 			n:eval($arg)
 		else if($arg eq ".") then
@@ -184,10 +208,8 @@ declare %private function core:is-fn-seq($value) {
 				if($_ instance of map(xs:string, item()?)) then
 					(: only check strings in sequence :)
 					core:is-fn-seq($_("args"))
-				else if($_ instance of xs:string and matches($_,"^[\$\.]")) then
-					$_
 				else
-					()
+					$_ instance of xs:string and matches($_,"^\.$|^\$")
 			})
 		))
 };
