@@ -24,7 +24,7 @@ TODO we may support bitwise operators, increment/decrement operators, assignment
 :)
 
 
-declare variable $rdl:chars := $rdl:suffix || $xqc:ncname || "\$:%/#@\^";
+declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$:%/#@\^";
 
 declare variable $rdl:filter-regexp := "(\])|(,)?([^\[\]]*)(\[?)";
 
@@ -171,6 +171,16 @@ declare function rdl:import-module($name,$params){
 	}
 };
 
+declare function rdl:stringify($a,$params){
+	string-join(array:flatten(array:for-each($a,function($t){
+		if($t instance of map(xs:string?,item()?)) then
+			concat($t("name"),"(",string-join(array:flatten(rdl:stringify($t("args"),$params)),","),")",if($t("suffix") instance of xs:string) then $t("suffix") else "")
+		else if($t instance of array(item())) then
+			concat("(",string-join(array:flatten(rdl:stringify($t,$params)),","),")")
+		else
+			$t
+	})),",")
+};
 
 declare function rdl:exec($query,$params){
 	(: FIXME retrieve default-namespace :)
@@ -185,6 +195,6 @@ declare function rdl:exec($query,$params){
 			})
 			return $module("$exports")("tp:transpile#3")(rdl:parse($query,$params),$frame,true())
 		else
-				let $frame := map:put($params,"$imports",map { "":$core,"n": $n})
-				return n:eval(rdl:parse($query,$params))($frame)
+			let $frame := map:put($params,"$imports",map { "":$core,"n": $n})
+			return n:eval(rdl:parse($query,$params))($frame)
 };
