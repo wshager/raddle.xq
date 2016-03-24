@@ -2,6 +2,8 @@ xquery version "3.1";
 
 module namespace xqc="http://raddle.org/xquery-compat";
 
+import module namespace console="http://exist-db.org/xquery/console";
+
 declare variable $xqc:ncname := "\p{L}\p{N}\-_\."; (: actually variables shouldn't start with number :)
 declare variable $xqc:qname := "[" || $xqc:ncname || "]*:?" || "[" || $xqc:ncname || "]+";
 declare variable $xqc:operator-regexp := "=#\p{N}+#?\p{N}*=";
@@ -27,6 +29,16 @@ declare variable $xqc:operators := map {
 	2.09: "let",
 	2.10: ":=",
 	2.11: "return",
+	2.12: "array",
+	2.13: "attribute",
+	2.14: "comment",
+	2.15: "document",
+	2.16: "element",
+	2.17: "function",
+	2.18: "map",
+	2.19: "namespace",
+	2.20: "processing-instruction",
+	2.21: "text",
 	3: "or",
 	4: "and",
 	5.01: "eq",
@@ -74,16 +86,6 @@ declare variable $xqc:operators := map {
 	20.06: "{",
 	20.07: "}",
 	20.08: "@",
-	21.01: "array",
-	21.02: "attribute",
-	21.03: "comment",
-	21.04: "document",
-	21.05: "element",
-	21.06: "function",
-	21.07: "map",
-	21.08: "namespace",
-	21.09: "processing-instruction",
-	21.10: "text",
 	(: leave type checks intact!
 	22.01: "array",
 	22.02: "attribute",
@@ -275,10 +277,10 @@ declare function xqc:annot($parts,$ret){
 	return
 		if(matches($maybe-annot,"^%")) then
 			xqc:annot($rest,$ret || $maybe-annot || "%")
-		else if($maybe-annot = "=#21#06=") then
-			xqc:fn($rest,$ret || "define(")
+		else if($maybe-annot = "=#2#17=") then
+			xqc:fn($rest,$ret || "core:define($,")
 		else if($maybe-annot = "=#24#04=") then
-			xqc:var($rest,$ret || "var(")
+			xqc:var($rest,$ret || "core:var(")
 		else $ret
 (:			xqc:decl(($maybe-annot,$rest),""):)
 };
@@ -288,19 +290,19 @@ declare function xqc:decl($parts,$ret){
 	let $rest := tail($parts)
 	return
 		if($type = "function") then
-			"define(" || xqc:fn($rest,$ret) || ")"
+			"core:define($," || xqc:fn($rest,$ret) || ")"
 		else if($type = "variable") then
-			"var(" || xqc:var($rest,$ret) || ")"
+			"core:var($," || xqc:var($rest,$ret) || ")"
 		else
-			"ns(" || xqc:ns($rest,"") || ")"
+			"core:xmlns($," || xqc:ns($rest,"") || ")"
 };
 
 declare function xqc:version($parts,$ret){
-	xqc:block(tail($parts),concat($ret,"xq-version(",$parts[1]/string(),")"))
+	xqc:block(tail($parts),concat($ret,"core:version(",$parts[1]/string(),")"))
 };
 
 declare function xqc:module($parts,$ret){
-	xqc:block(subsequence($parts,4),concat($ret,"module(",$parts[1]/string(),",",$parts[3]/string(),",())"))
+	xqc:block(subsequence($parts,4),concat($ret,"core:module($,",$parts[1]/string(),",",$parts[3]/string(),",())"))
 };
 
 declare function xqc:repl($lastseen as xs:float*,$no as xs:float){
@@ -372,11 +374,18 @@ declare function xqc:pop($a) {
 
 declare function xqc:anon($head,$lastseen,$parts,$ret,$params) {
 	if(matches($head,$xqc:operator-regexp) and xqc:op-num($head) eq 20.06) then
-		xqc:body($parts,$ret,xqc:appd($lastseen,20.06))
+		let $n := console:log($params) return
+		xqc:body($parts,concat($ret,")"),xqc:appd($lastseen,20.06))
 	else
 		if(matches($head,"^\$")) then
 			let $rest := tail($parts)
 			let $next := head($rest)/string()
+			let $type :=
+				if($next = "=#23=") then
+					(: expect a type and throw it away :)
+					$rest[3]
+				else
+					()
 			let $rest :=
 				if($next = "=#23=") then
 					(: expect a type and throw it away :)
@@ -385,14 +394,16 @@ declare function xqc:anon($head,$lastseen,$parts,$ret,$params) {
 					tail($rest)
 				else
 					$rest
-			return xqc:anon(head($parts)/string(),xqc:appd($lastseen,2.11),$rest,concat($ret,"=#2#09=(",replace($head,"^\$",""),",_",count($params),","),($params,$head))
+			let $n := replace($head,"^\$","")
+			return xqc:anon(head($parts)/string(),xqc:appd($lastseen,2.11),$rest,$ret,($params,$head))
 		else
 			xqc:anon(head($parts)/string(),$lastseen,tail($parts),$ret,$params)
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
-	if($no eq 21.06) then
-		xqc:anon($next,xqc:appd($lastseen,$no),tail($rest),$ret,())
+	if($no eq 2.17) then
+		let $n := console:log($ret) return
+		xqc:anon($next,xqc:appd($lastseen,$no),tail($rest),concat($ret,"=#2#17=(_,"),())
 	else
 		let $old := $lastseen
 		let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
@@ -497,7 +508,7 @@ declare function xqc:body($parts,$ret,$lastseen){
 (:				xqc:body($rest,$lastseen,concat($ret,"_",$params($head)),$params):)
 			else
 				xqc:body($rest,
-					if(xqc:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then
+					if(xqc:eq($non,(2.06,2.09,2.17)) and matches($head,",|\(") = false()) then
 						concat($ret,$head,",")
 					else
 						concat($ret,$head),
@@ -587,9 +598,9 @@ declare function xqc:operator-precedence($val,$operator,$ret){
 
 declare function xqc:to-op($opnum){
 	if(map:contains($xqc:operator-map,$opnum)) then
-		$xqc:operator-map($opnum)
+		"core:" || $xqc:operator-map($opnum)
 	else
-		replace($xqc:operators($opnum)," ","-")
+		"core:" || replace($xqc:operators($opnum)," ","-")
 };
 
 declare function xqc:rename($a,$fn) {
@@ -630,7 +641,7 @@ declare function xqc:prepare-for-regex($key) as xs:string {
 	let $arg := $xqc:operators($key)
 	return
 		(: constructors :)
-		if($key eq 21.06) then
+		if($key eq 2.17) then
 			"(^|\s)" || $arg || "[\s" || $xqc:ncname || ":]*\([\s\$" || $xqc:ncname || ",:\)]*=#20#06"
 		else
 			"(^|\s)" || $arg || "[\s\$" || $xqc:ncname || ",:]*=#20#06"
