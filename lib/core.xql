@@ -22,9 +22,10 @@ declare function core:text($frame,$content){
 
 declare function core:define($frame,$name,$desc,$args,$type,$body) {
 	(: TODO conform to eXist inspect:* argument properties :)
+	let $n:= console:log($args($frame)) return
 	map:new(($frame,
 		map:entry("$functions",core:describe($frame("$functions"),$name,$desc,$args,$type)),
-		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$frame,$type)))
+		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$type)))
 	))
 };
 
@@ -38,7 +39,7 @@ declare function core:describe($frame,$name,$desc,$args,$type){
 };
 
 declare function core:function($frame,$name,$args,$type,$body) {
-	map:put($frame,$name || "#" || array:size($args),n:bind($body,$args,$frame,$type))
+	map:put($frame,$name || "#" || array:size($args),n:bind($body,$args,$type))
 };
 
 declare function core:typecheck($type,$val){
@@ -85,12 +86,13 @@ declare function core:typegen($type,$name) {
 	let $name := $parts[1]
 	let $suffix := $parts[2]
 	return
-		function($val,$i,$frame) {
+		function($frame,$val,$i) {
 			map:put($frame,if($name eq "") then string($i) else $name,$val)
 		}
 };
 
 declare function core:integer() {
+	(: TODO check a return type :)
 	"xs:integer"
 };
 
@@ -132,6 +134,7 @@ declare function core:string($name,$val) {
 
 declare function core:resolve-function($frame,$name){
 	(: TODO move to bindings :)
+	let $n: = console:log("resolving " || $name || $frame instance of map(xs:string,item()?)) return
 	if(map:contains($frame,"$prefix") and matches($name,"^" || $frame("$prefix") || ":")) then
 		$frame("$exports")($name)
 	else
@@ -143,6 +146,7 @@ declare function core:resolve-function($frame,$name){
 };
 
 declare function core:process-args($frame,$args){
+	let $n: = console:log($args) return
 	a:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
@@ -161,6 +165,7 @@ declare function core:process-args($frame,$args){
 		else if($arg eq "$") then
 			$frame
 		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
+			(: retrieve bound value :)
 			$frame(replace($arg,"^\$",""))
 		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
 			core:resolve-function($frame,$arg)
@@ -170,7 +175,7 @@ declare function core:process-args($frame,$args){
 };
 
 
-declare function core:is-fn-seq($value) {
+declare %private function core:is-fn-seq($value) {
 	if(array:size($value) eq 0) then
 		()
 	else
