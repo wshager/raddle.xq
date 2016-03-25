@@ -2,9 +2,8 @@ xquery version "3.1";
 
 module namespace xq="http://raddle.org/xquery";
 
-import module namespace raddle="http://lagua.nl/lib/raddle" at "/db/apps/raddle.xq/content/raddle.xql";
-import module namespace core="http://raddle.org/core" at "/db/apps/raddle.xq/lib/core.xql";
-import module namespace console="http://exist-db.org/xquery/console";
+import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
+import module namespace core="http://raddle.org/core" at "core.xql";
 
 declare function xq:module($prefix,$ns,$desc) {
 	concat("module namespace ", raddle:clip-string($prefix), "=", $ns, ";&#10;(:",$desc,":)")

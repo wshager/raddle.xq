@@ -2,10 +2,10 @@ xquery version "3.1";
 
 module namespace tp="http://raddle.org/transpile";
 
-import module namespace raddle="http://lagua.nl/lib/raddle" at "/db/apps/raddle.xq/content/raddle.xql";
-import module namespace core="http://raddle.org/core" at "core.xql";
+import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 import module namespace xq="http://raddle.org/xquery" at "xq.xql";
 import module namespace js="http://raddle.org/javascript" at "js.xql";
+import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 
 import module namespace console="http://exist-db.org/xquery/console";
 
@@ -31,9 +31,9 @@ declare function tp:function($frame,$name,$args,$type,$body) {
 };
 
 declare function tp:process-args($frame,$name,$args){
-	core:for-each($args,function($arg){
+	a:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
-			core:for-each-at($arg,function($_,$at){
+			a:for-each-at($arg,function($_,$at){
 				tp:transpile($_,map:put($frame,"$at",$at),$name = "function")
 			})
 		else if($arg instance of map(xs:string,item()?)) then
@@ -66,7 +66,7 @@ declare function tp:transpile($value,$frame) {
 
 declare function tp:transpile($value,$frame,$top){
 	if($value instance of array(item()?)) then
-		core:fold-left($value,"",function($pre,$cur){
+		a:fold-left($value,"",function($pre,$cur){
 			$pre || "&#10;" || tp:transpile($cur,$frame,$top)
 		})
 	else if($value instance of map(xs:string,item()?)) then
@@ -105,7 +105,7 @@ declare function tp:convert($string){
 
 declare function tp:serialize($value,$params){
 	if($value instance of map(xs:string, item()?)) then
-		$value("name") || (if(map:contains($value,"args")) then raddle:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
+		$value("name") || (if(map:contains($value,"args")) then tp:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
 	else if($value instance of array(item()?)) then
 		"(" || string-join(array:flatten(array:for-each($value,function($val){
 			tp:serialize($val,$params)
@@ -162,30 +162,30 @@ declare function tp:integer($frame,$name,$val) {
 	tp:typegen("integer",$name,$val,$frame)
 };
 (::)
-(:declare function core:integer($name,$val,$context) {:)
-(:	core:typegen("xs:integer",$name)($val,$context):)
+(:declare function tp:integer($name,$val,$context) {:)
+(:	tp:typegen("xs:integer",$name)($val,$context):)
 (:};:)
 (::)
-(:declare function core:integer($name,$val,$body,$context) {:)
-(:	core:typegen("xs:integer",$name,$body)($val,$context):)
+(:declare function tp:integer($name,$val,$body,$context) {:)
+(:	tp:typegen("xs:integer",$name,$body)($val,$context):)
 (:};:)
 (::)
-(:declare function core:string() {:)
+(:declare function tp:string() {:)
 (:	"xs:string":)
 (:};:)
 (::)
-(:declare function core:string($name) {:)
-(:	core:typegen("xs:string",$name):)
+(:declare function tp:string($name) {:)
+(:	tp:typegen("xs:string",$name):)
 (:};:)
 (::)
-(:declare function core:string($name,$val) {:)
-(:	core:typegen("xs:string",$name,$val):)
+(:declare function tp:string($name,$val) {:)
+(:	tp:typegen("xs:string",$name,$val):)
 (:};:)
 (::)
-(:declare function core:string($name,$val,$context) {:)
-(:	core:typegen("xs:string",$name)($val,$context):)
+(:declare function tp:string($name,$val,$context) {:)
+(:	tp:typegen("xs:string",$name)($val,$context):)
 (:};:)
 (::)
-(:declare function core:integer($name,$val,$body,$context) {:)
-(:	core:typegen("xs:string",$name,$body)($val,$context):)
+(:declare function tp:integer($name,$val,$body,$context) {:)
+(:	tp:typegen("xs:string",$name,$body)($val,$context):)
 (:};:)

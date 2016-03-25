@@ -2,10 +2,6 @@ xquery version "3.1";
 
 module namespace js="http://raddle.org/javascript";
 
-import module namespace raddle="http://lagua.nl/lib/raddle" at "/db/apps/raddle.xq/content/raddle.xql";
-import module namespace core="http://raddle.org/core" at "/db/apps/raddle.xq/lib/core.xql";
-import module namespace console="http://exist-db.org/xquery/console";
-
 declare variable $js:typemap := map {
 	"integer": "Number",
 	"string": "String"
