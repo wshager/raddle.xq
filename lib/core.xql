@@ -29,12 +29,12 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 	return
 	map:new(($frame,
 		map:entry("$functions",core:describe($frame("$functions"),$name,$desc,$args,$type)),
-		map:entry("$exports",map:put($frame("$exports"),$name || "#" || array:size($args),n:bind($body,$args,$type)($frame)))
+		map:entry("$exports",map:put($frame("$exports"),concat($name,"#",array:size($args)),n:bind($body,$args,$type)($frame)))
 	))
 };
 
 declare function core:describe($frame,$name,$desc,$args,$type){
-	map:put($frame,$name || "#" || array:size($args),
+	map:put($frame,concat($name,"#",array:size($args)),
 		map {
 			"name": $name,
 			"description": $desc
@@ -44,11 +44,11 @@ declare function core:describe($frame,$name,$desc,$args,$type){
 
 declare function core:function($frame,$name,$args,$type,$body) {
 	(: body+args are quotations :)
-	map:put($frame,$name || "#" || array:size($args),n:bind($body,$args,$type))
+	map:put($frame,concat($name,"#",array:size($args)),n:bind($body,$args,$type))
 };
 
 declare function core:typecheck($type,$val){
-	if(util:eval("$val instance of " || $type)) then
+	if(util:eval(concat("$val instance of ",$type))) then
 		console:log(($val,$type))
 	else
 		console:log("Not of correct type")
@@ -68,18 +68,6 @@ declare function core:typegen($type,$name,$val) {
 	let $name := $parts[1]
 	let $suffix := $parts[2]
 	return
-(:		if($body instance of function() as item()) then:)
-(:			(: create closure over variable :):)
-(:			function($val,$context) {:)
-(:				$body(map:put($context,$name,$val)):)
-(:			}:)
-(:		else if($body) then:)
-(:			(: default param value generator:):)
-(:			function($null,$context) {:)
-(:				(: _check($body,$type);:):)
-(:				map:put($context,$name,$body):)
-(:			}:)
-(:		else:)
 			function($frame) {
 				(: _check($val,$type);:)
 				map:put($frame,$name,$val)
@@ -111,14 +99,6 @@ declare function core:integer($name,$val) {
 	core:typegen("xs:integer",$name,$val)
 };
 
-(:declare function core:integer($name,$val,$context) {:)
-(:	core:typegen("xs:integer",$name)($val,$context):)
-(:};:)
-(::)
-(:declare function core:integer($name,$val,$body,$context) {:)
-(:	core:typegen("xs:integer",$name,$body)($val,$context):)
-(:};:)
-
 declare function core:string() {
 	"xs:string"
 };
@@ -130,14 +110,6 @@ declare function core:string($name) {
 declare function core:string($name,$val) {
 	core:typegen("xs:string",$name,$val)
 };
-(::)
-(:declare function core:string($name,$val,$context) {:)
-(:	core:typegen("xs:string",$name)($val,$context):)
-(:};:)
-(::)
-(:declare function core:integer($name,$val,$body,$context) {:)
-(:	core:typegen("xs:string",$name,$body)($val,$context):)
-(:};:)
 
 declare function core:apply($frame,$name,$args){
 	let $self := core:is-current-module($frame,$name)
@@ -150,7 +122,7 @@ declare function core:apply($frame,$name,$args){
 };
 
 declare %private function core:is-current-module($frame,$name){
-	map:contains($frame,"$prefix") and matches($name,"^" || $frame("$prefix") || ":")
+	map:contains($frame,"$prefix") and matches($name,concat("^",$frame("$prefix"),":"))
 };
 
 declare function core:resolve-function($frame,$name){
@@ -165,7 +137,7 @@ declare function core:resolve-function($frame,$name,$self){
 		let $parts := tokenize($name,":")
 		let $prefix := if($parts[2]) then $parts[1] else ""
 		let $module := $frame("$imports")($prefix)
-		let $theirname := concat(if($module("$prefix")) then $module("$prefix") || ":" else "", $parts[last()])
+		let $theirname := concat(if($module("$prefix")) then concat($module("$prefix"),":") else "", $parts[last()])
 		return $module("$exports")($theirname)
 };
 
@@ -188,10 +160,10 @@ declare function core:process-args($frame,$args){
 			$frame("0")
 		else if($arg eq "$") then
 			$frame
-		else if(matches($arg,"^\$[" || $raddle:ncname || "]+$")) then
+		else if(matches($arg,concat("^\$[",$raddle:ncname,"]+$"))) then
 			(: retrieve bound value :)
 			$frame(replace($arg,"^\$",""))
-		else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
+		else if(matches($arg,concat("^[",$raddle:ncname,"]?:?[",$raddle:ncname,"]+#(\p{N}|N)+"))) then
 			core:resolve-function($frame,$arg)
 		else
 			$arg
@@ -235,7 +207,7 @@ declare function core:module($frame,$prefix,$ns,$desc){
 	(: insert module into global context, overwrites this copy! :)
 	(: any function in module is a function or var declaration ! :)
 	(: TODO context for functions is a module, context for imports also (i.e. mappings) :)
-	(: BUT imports should be reused, so they're inserted into a global context... (and so may be mutable) :)
+	(: BUT imports should be reused, so they are inserted into a global context... (and so may be mutable) :)
 	map:new(($frame, map {
 		"$prefix": $prefix,
 		"$uri": $ns,
