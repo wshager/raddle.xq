@@ -229,7 +229,7 @@ declare function xqc:seqtype($parts,$ret){
 	let $maybe-seqtype := if(matches($head,$xqc:operator-regexp)) then xqc:op-num($head) else 0
 	return
 		if($maybe-seqtype eq 20.06) then
-			xqc:body(tail($parts),concat($ret,","))
+			xqc:body(tail($parts),concat($ret,","),(20.06))
 		else if($maybe-seqtype eq 24) then
 			xqc:seqtype(subsequence($parts,3),$ret || $parts[2]/string())
 		else
@@ -268,7 +268,7 @@ declare function xqc:params($parts,$ret){
 declare function xqc:fn($parts,$ret){
 	(: TODO $parts(2) should be a paren, or error :)
 	(: remove last } :)
-	xqc:params(subsequence($parts,3),$ret || head($parts)/fn:group[@nr=1]/string() || ",(") || ")"
+	xqc:params(subsequence($parts,3),$ret || head($parts)/fn:group[@nr=1]/string() || ",(")
 };
 
 declare function xqc:ns($parts,$ret){
@@ -374,10 +374,16 @@ declare function xqc:closer($a as xs:decimal,$b as xs:decimal*){
 };
 
 declare function xqc:closer($a as xs:decimal,$b as xs:decimal*,$c as xs:integer){
-	if(empty($b) or xqc:eq($a,(2.08,2.11,20.07)) = false()) then
+	if(empty($b) or xqc:eq($a,(2.08,2.11)) = false()) then
 		$c
 	else
 		xqc:closer(head($b),tail($b),$c + 1)
+};
+
+declare function xqc:last-index-of($lastseen as xs:decimal*,$a as xs:decimal) {
+	let $id := index-of($lastseen,$a)
+	return
+		if(empty($id)) then 1 else $id[last()]
 };
 
 declare function xqc:pop($a) {
@@ -410,13 +416,13 @@ declare function xqc:anon($head,$parts,$ret,$lastseen) {
 
 declare function xqc:map($parts,$ret,$lastseen){
 	let $head := head($parts)/string()
-	let $n := console:log($head)
+(:	let $n := console:log($head):)
 	let $op := if(matches($head,$xqc:operator-regexp)) then xqc:op-num($head) else 0
 	return
-		if($op eq 20.07) then
-			xqc:body(tail($parts),concat($ret,")"),$lastseen)
-		else
-			xqc:body($parts,concat($ret,"map:entry("), $lastseen)
+(:		if($op eq 20.07) then:)
+(:			xqc:body($parts,$ret,$lastseen):)
+(:		else:)
+			xqc:body($parts,$ret, $lastseen)
 };
 
 declare function xqc:comment($parts,$ret,$lastseen) {
@@ -431,33 +437,28 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	if($no eq 1) then
-		if($lastseen[last()] eq 26) then
-			xqc:map($rest,concat($ret,"),"),xqc:pop($lastseen))
-		else if($lastseen[last()] eq 21.07) then
-			xqc:body($rest,concat($ret,"),"),xqc:pop($lastseen))
-		else
-			xqc:body($rest,concat($ret,","),$lastseen)
+		xqc:body($rest,concat($ret,","),$lastseen)
 	else if($no eq 26) then
 		xqc:body($rest,concat($ret,","),xqc:appd($lastseen,$no))
 	else if($no eq 25.01) then
 		xqc:comment($rest,$ret,$lastseen)
 	else if($no eq 21.06) then
-		xqc:anon($next,tail($rest),concat($ret,"=#21#06=(("),xqc:appd($lastseen,$no))
+		xqc:anon($next,tail($rest),concat($ret,"=#21#06=(("),$lastseen)
 	else if($no eq 21.07) then
-		xqc:map(tail($rest),concat($ret,"map:new("),xqc:appd($lastseen,$no))
+		xqc:map(tail($rest),concat($ret,"map:new("),xqc:appd($lastseen,20.06))
 	else
 		let $old := $lastseen
 		let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
 		let $close :=
-			if(xqc:eq($no,(2.08,2.11,20.07)) and xqc:eq($prevseen,(2.08,2.11,20.07))) then
-				xqc:closer($prevseen,$lastseen)
+			if(xqc:eq($no,(2.08,2.11)) and xqc:eq($prevseen,(2.08,2.11))) then
+				xqc:closer($prevseen,subsequence($lastseen,xqc:last-index-of($lastseen,20.06),count($lastseen)))
 			else
 				0
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
-					if(xqc:eq($no, 2.09) and xqc:eq($prevseen,2.10)) then "," else "",
+					if(xqc:eq($no, 2.09) and xqc:eq($prevseen,(2.10,2.11)) and substring($ret,string-length($ret)) ne ",") then "," else "",
 					if($positional) then
 						xqc:op-str(20.05)
 					else
@@ -479,8 +480,12 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						, $next)
 					else ""
 				)
-			else if(xqc:eq($no, (2.07,2.08,2.10,2.11,20.07))) then
-				concat(if($close>0) then string-join((1 to $close) ! ")") else "", if($no eq 20.07) then ")" else ",")
+			else if($no eq 20.07) then
+				let $lastindex := xqc:last-index-of($lastseen,20.06)
+				(: add one extra closed paren by consing 2.11 :)
+				return string-join((subsequence($lastseen,$lastindex,count($lastseen)),2.11)[xqc:eq(.,(2.08,2.10,2.11))] ! ")")
+			else if(xqc:eq($no, (2.07,2.08,2.10,2.11))) then
+				concat(if($close>0) then string-join((1 to $close) ! ")") else "",",")
 			else if(xqc:eq($no,20.02)) then
 				")"
 			else if($no eq 20.06) then
@@ -499,15 +504,22 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 					xqc:appd($lastseen,2.11)
 				else
 					xqc:appd($lastseen,$no)
-			else if(xqc:eq($no, (2.07,2.08,2.10,2.11,20.07))) then
+			else if($no = 20.07) then
+				(: eat up until 20.06 AND the block opener :)
+				let $lastseen := subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
+(:				let $n := console:log("from ender " || string-join($lastseen,",")):)
+				return
+(:					if(round($lastseen[last()]) eq 21) then:)
+(:						reverse(tail(reverse($lastseen))):)
+(:					else:)
+						$lastseen
+			else if(xqc:eq($no, (2.07,2.08,2.10,2.11))) then
 				if($close>0) then
 					xqc:close($lastseen,$no,$close)
 				else
 					xqc:repl($lastseen,$no)
-			else if(round($no) eq 21) then
+			else if($no eq 20.06 or round($no) eq 21) then
 				xqc:appd($lastseen,$no)
-			else if($no eq 20.06 and round($prevseen) eq 21) then (: the prevseen check should be redundant :)
-				xqc:appd(xqc:pop($lastseen),$prevseen)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
@@ -522,16 +534,15 @@ declare function xqc:is-array($head,$non){
 
 declare function xqc:body($parts,$ret,$lastseen){
 	if(empty($parts)) then
-		concat($ret, string-join($lastseen[xqc:eq(.,(2.08,2.11))] ! ")"))
+		concat($ret, string-join($lastseen[xqc:eq(.,(2.08,2.11,20.07))] ! ")"))
 	else
 		let $head := head($parts)/string()
-		let $n := console:log($head)
 		let $rest := tail($parts)
 		return
 			if($head = "=#25#01=") then
-				xqc:comment($rest,$ret,())
+				xqc:comment($rest,$ret,$lastseen)
 			else if(matches($head,";")) then
-				xqc:block($parts, concat($ret, string-join($lastseen[xqc:eq(.,(2.08,2.11))] ! ")")))
+				xqc:block($parts, $ret)
 			else
 				let $next := if(empty($rest)) then () else head($rest)/string()
 				let $non :=
@@ -566,7 +577,7 @@ declare function xqc:body($parts,$ret,$lastseen){
 declare function xqc:import($parts,$ret) {
 	let $rest := subsequence($parts,6)
 	let $maybe-at := head($rest)/string()
-	let $n := console:log($maybe-at)
+(:	let $n := console:log($maybe-at):)
 	return
 		if($maybe-at = "=#23#07=") then
 			xqc:block(subsequence($rest,3),concat($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
