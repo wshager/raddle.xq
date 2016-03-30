@@ -458,7 +458,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
-					if($no eq 2.09 and $prevseen ne 20.06) then ")," else "",
+					if($no eq 2.09 and $prevseen eq 2.10) then ")," else "",
 					if($positional) then
 						xqc:op-str(20.05)
 					else
@@ -502,7 +502,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				tail($rest)
 		let $lastseen :=
 			if(xqc:eq($no, (2.06,2.09,20.01))) then
-				xqc:appd($lastseen,$no)
+				let $lastseen := if($no eq 2.09 and $prevseen eq 2.10) then xqc:pop($lastseen) else $lastseen
+				return xqc:appd($lastseen,$no)
 			else if($no = 20.07) then
 				(: eat up until 20.06 :)
 				subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
