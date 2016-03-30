@@ -267,8 +267,7 @@ declare function xqc:params($parts,$ret){
 
 declare function xqc:fn($parts,$ret){
 	(: TODO $parts(2) should be a paren, or error :)
-	(: remove last } :)
-	xqc:params(subsequence($parts,3),$ret || head($parts)/fn:group[@nr=1]/string() || ",(")
+	xqc:params(tail($parts),$ret || head($parts)/fn:group[@nr=1]/string() || ",(")
 };
 
 declare function xqc:ns($parts,$ret){
@@ -283,16 +282,20 @@ declare function xqc:var($parts,$ret){
 	return string-join($rest)
 };
 
-declare function xqc:annot($parts,$ret){
+declare function xqc:annot($parts,$ret) {
+	xqc:annot($parts,$ret,"")
+};
+
+declare function xqc:annot($parts,$ret,$annot){
 	let $maybe-annot := head($parts)/fn:group[@nr=1]/string()
 	let $rest := tail($parts)
 	return
 		if(matches($maybe-annot,"^%")) then
-			xqc:annot($rest,$ret || $maybe-annot || "%")
+			xqc:annot($rest,$ret,replace($maybe-annot,"^%","-"))
 		else if($maybe-annot = "=#21#06=") then
-			xqc:fn($rest,$ret || "core:define($,")
+			xqc:fn($rest,$ret || "core:define" || $annot || "($,")
 		else if($maybe-annot = "=#23#05=") then
-			xqc:var($rest,$ret || "core:var(")
+			xqc:var($rest,$ret || "core:var" || $annot || "(")
 		else $ret
 (:			xqc:decl(($maybe-annot,$rest),""):)
 };
@@ -374,7 +377,7 @@ declare function xqc:closer($a as xs:decimal,$b as xs:decimal*){
 };
 
 declare function xqc:closer($a as xs:decimal,$b as xs:decimal*,$c as xs:integer){
-	if(empty($b) or xqc:eq($a,(2.08,2.11)) = false()) then
+	if(empty($b) or xqc:eq($a,2.08) = false()) then
 		$c
 	else
 		xqc:closer(head($b),tail($b),$c + 1)
@@ -437,7 +440,18 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	if($no eq 1) then
-		xqc:body($rest,concat($ret,","),$lastseen)
+		let $else := $lastseen[last()] eq 2.08
+		let $ret :=
+			if($else) then
+				concat($ret,"),")
+			else
+				concat($ret,",")
+		let $lastseen :=
+			if($else) then
+				xqc:pop($lastseen)
+			else
+				$lastseen
+		return xqc:body($rest,$ret,$lastseen)
 	else if($no eq 26) then
 		xqc:body($rest,concat($ret,","),xqc:appd($lastseen,$no))
 	else if($no eq 25.01) then
@@ -448,17 +462,11 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 		xqc:map(tail($rest),concat($ret,"map:new("),xqc:appd($lastseen,20.06))
 	else
 		let $old := $lastseen
-		let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
-(:		let $close :=:)
-(:			if(xqc:eq($no,(2.08,2.11)) and xqc:eq($prevseen,(2.08,2.11))) then:)
-(:				xqc:closer($prevseen,subsequence($lastseen,xqc:last-index-of($lastseen,20.06),count($lastseen))):)
-(:			else:)
-(:				0:)
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
-					if($no eq 2.09 and $prevseen eq 2.10) then ")," else "",
+					if($no eq 2.09 and not($lastseen[last()] eq 20.06 or empty($lastseen)) and substring($ret,string-length($ret)) ne ",") then if($lastseen[last()] eq 2.08 and $lastseen[last() - 1] eq 2.10) then "))," else ")," else "",
 					if($positional) then
 						xqc:op-str(20.05)
 					else
@@ -488,7 +496,10 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 (:				concat(if($close>0) then string-join((1 to $close) ! ")") else "",","):)
 				","
 			else if($no eq 2.11) then
-				"),"
+				if($lastseen[last()] eq 2.08) then
+					")),"
+				else
+					"),"
 			else if(xqc:eq($no,20.02)) then
 				")"
 			else if($no eq 20.06) then
@@ -502,7 +513,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				tail($rest)
 		let $lastseen :=
 			if(xqc:eq($no, (2.06,2.09,20.01))) then
-				let $lastseen := if($no eq 2.09 and $prevseen eq 2.10) then xqc:pop($lastseen) else $lastseen
+				let $lastseen := if($no eq 2.09 and $lastseen[last()] eq 2.08 and $lastseen[last() -1] eq 2.10) then xqc:pop($lastseen) else $lastseen
+				let $lastseen := if($no eq 2.09 and $lastseen[last()] eq 2.10) then xqc:pop($lastseen) else $lastseen
 				return xqc:appd($lastseen,$no)
 			else if($no = 20.07) then
 				(: eat up until 20.06 :)
@@ -513,7 +525,12 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 (:				else:)
 					xqc:repl($lastseen,$no)
 			else if($no eq 2.11) then
-				xqc:pop($lastseen)
+				let $lastseen :=
+					if($lastseen[last()] eq 2.08) then
+						xqc:pop($lastseen)
+					else
+						$lastseen
+				return xqc:pop($lastseen)
 			else if($no eq 20.06 or round($no) eq 21) then
 				xqc:appd($lastseen,$no)
 			else if($no eq 20.02) then
