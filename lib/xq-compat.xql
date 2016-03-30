@@ -450,22 +450,22 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 		let $old := $lastseen
 		let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
-		let $close :=
-			if(xqc:eq($no,(2.08,2.11)) and xqc:eq($prevseen,(2.08,2.11))) then
-				xqc:closer($prevseen,subsequence($lastseen,xqc:last-index-of($lastseen,20.06),count($lastseen)))
-			else
-				0
+(:		let $close :=:)
+(:			if(xqc:eq($no,(2.08,2.11)) and xqc:eq($prevseen,(2.08,2.11))) then:)
+(:				xqc:closer($prevseen,subsequence($lastseen,xqc:last-index-of($lastseen,20.06),count($lastseen))):)
+(:			else:)
+(:				0:)
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
-					if(xqc:eq($no, 2.09) and xqc:eq($prevseen,(2.10,2.11)) and substring($ret,string-length($ret)) ne ",") then "," else "",
+					if($no eq 2.09 and $prevseen ne 20.06) then ")," else "",
 					if($positional) then
 						xqc:op-str(20.05)
 					else
 						xqc:op-str($no),
 					if($no eq 2.06) then "" else "(",
 					if(xqc:eq($no, 2.09)) then
-						replace($next,"^\$|\s","")
+						concat("$,",replace($next,"^\$|\s",""))
 					else if(xqc:eq($no, 20.01)) then
 						(: prepare filter :)
 						concat(
@@ -483,9 +483,12 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			else if($no eq 20.07) then
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
 				(: add one extra closed paren by consing 2.11 :)
-				return string-join((subsequence($lastseen,$lastindex,count($lastseen)),2.11)[xqc:eq(.,(2.08,2.10,2.11))] ! ")")
-			else if(xqc:eq($no, (2.07,2.08,2.10,2.11))) then
-				concat(if($close>0) then string-join((1 to $close) ! ")") else "",",")
+				return string-join((subsequence($lastseen,$lastindex,count($lastseen)),2.11)[xqc:eq(.,(2.08,2.11))] ! ")")
+			else if(xqc:eq($no, (2.07,2.08,2.10))) then
+(:				concat(if($close>0) then string-join((1 to $close) ! ")") else "",","):)
+				","
+			else if($no eq 2.11) then
+				"),"
 			else if(xqc:eq($no,20.02)) then
 				")"
 			else if($no eq 20.06) then
@@ -499,32 +502,24 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				tail($rest)
 		let $lastseen :=
 			if(xqc:eq($no, (2.06,2.09,20.01))) then
-				if(xqc:eq($no, 2.09) and xqc:eq($prevseen,2.10)) then
-					(: push explicit return :)
-					xqc:appd($lastseen,2.11)
-				else
-					xqc:appd($lastseen,$no)
+				xqc:appd($lastseen,$no)
 			else if($no = 20.07) then
-				(: eat up until 20.06 AND the block opener :)
-				let $lastseen := subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
-(:				let $n := console:log("from ender " || string-join($lastseen,",")):)
-				return
-(:					if(round($lastseen[last()]) eq 21) then:)
-(:						reverse(tail(reverse($lastseen))):)
-(:					else:)
-						$lastseen
-			else if(xqc:eq($no, (2.07,2.08,2.10,2.11))) then
-				if($close>0) then
-					xqc:close($lastseen,$no,$close)
-				else
+				(: eat up until 20.06 :)
+				subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
+			else if(xqc:eq($no, (2.07,2.08,2.10))) then
+(:				if($close>0) then:)
+(:					xqc:close($lastseen,$no,$close):)
+(:				else:)
 					xqc:repl($lastseen,$no)
+			else if($no eq 2.11) then
+				xqc:pop($lastseen)
 			else if($no eq 20.06 or round($no) eq 21) then
 				xqc:appd($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
 				$lastseen
-		let $nu := console:log($no || " x " ||$close || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))
+		let $nu := console:log($no || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -567,9 +562,9 @@ declare function xqc:body($parts,$ret,$lastseen){
 		(:				xqc:body($rest,$lastseen,concat($ret,"_",$params($head)),$params):)
 					else
 						xqc:body($rest,
-							if(xqc:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then
-								concat($ret,$head,",")
-							else
+(:							if(xqc:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then:)
+(:								concat($ret,$head,","):)
+(:							else:)
 								concat($ret,$head),
 						$lastseen)
 };
