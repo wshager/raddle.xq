@@ -3,6 +3,7 @@ xquery version "3.1";
 module namespace rdl="http://raddle.org/raddle";
 import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat.xql";
 import module namespace n="http://raddle.org/native-xq" at "../lib/n.xql";
+import module namespace a="http://raddle.org/array-util" at "../lib/array-util.xql";
 
 import module namespace console="http://exist-db.org/xquery/console";
 (:
@@ -172,14 +173,27 @@ declare function rdl:import-module($name,$params){
 };
 
 declare function rdl:stringify($a,$params){
-	string-join(array:flatten(array:for-each($a,function($t){
-		if($t instance of map(xs:string?,item()?)) then
-			concat($t("name"),"(",string-join(array:flatten(rdl:stringify($t("args"),$params)),","),")",if($t("suffix") instance of xs:string) then $t("suffix") else "")
-		else if($t instance of array(item())) then
-			concat("(",string-join(array:flatten(rdl:stringify($t,$params)),","),")")
-		else
-			$t
-	})),",")
+	rdl:stringify($a,$params,true())
+};
+
+declare function rdl:stringify($a,$params,$top){
+	let $s := array:size($a)
+	return
+		a:fold-left-at($a,"",function($acc,$t,$i){
+			let $type :=
+				typeswitch($t)
+					case map(xs:string?,item()?) return 1
+					case array(item()) return 2
+					default return 0
+			let $ret :=
+				if($type eq 1) then
+					concat($t("name"),"(",string-join(array:flatten(rdl:stringify($t("args"),$params,false())),","),")",if($t("suffix") instance of xs:string) then $t("suffix") else "")
+				else if($type eq 2) then
+					concat("(",rdl:stringify($t,$params,false()),")")
+				else
+					$t
+			return concat($acc,if($i > 1 and not($type eq 1 and $t("name") eq "")) then if($top) then ",&#10;&#13;" else "," else "",$ret)
+		})
 };
 
 declare function rdl:exec($query,$params){
