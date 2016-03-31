@@ -204,10 +204,9 @@ declare function rdl:exec($query,$params){
 		if(map:contains($params,"$transpile")) then
 			let $module := n:import("../lib/transpile.xql")
 			let $frame := map:put($params,"$imports",map {
-				"core":$core,
-				"":$module
+				"core":$module
 			})
-			return $module("$exports")("tp:transpile#3")(rdl:parse($query,$params),$frame,true())
+			return $module("$exports")("core:transpile#3")(rdl:parse($query,$params),$frame,true())
 		else
 			let $frame := map:put($params,"$imports",map { "":$core,"n": $n})
 			return n:eval(rdl:parse($query,$params))($frame)
