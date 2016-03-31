@@ -1,6 +1,6 @@
 xquery version "3.1";
 
-module namespace tp="http://raddle.org/transpile";
+module namespace core="http://raddle.org/transpile";
 
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 import module namespace xq="http://raddle.org/xquery" at "xq.xql";
@@ -9,9 +9,27 @@ import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 
 import module namespace console="http://exist-db.org/xquery/console";
 
-declare variable $tp:types := ("integer","string");
+declare variable $core:types := ("integer","string");
 
-declare function tp:module($frame,$prefix,$ns,$desc) {
+declare variable $core:auto-converted := map {
+	"true" := "true()",
+	"false" := "false()",
+	"null" := "()",
+	"undefined" := "()",
+	"Infinity" := "1 div 0e0",
+	"-Infinity" := "-1 div 0e0"
+};
+
+declare function core:xq-version($frame,$version){
+	if($frame("$transpile") eq "xq") then
+		"xquery version &quot;" || $version || "&quot;;"
+	else if($frame("$transpile") eq "js") then
+		"/* xquery version " || $version || " */"
+	else
+		()
+};
+
+declare function core:module($frame,$prefix,$ns,$desc) {
 	if($frame("$transpile") eq "xq") then
 		xq:module($prefix, $ns, $desc)
 	else if($frame("$transpile") eq "js") then
@@ -20,7 +38,34 @@ declare function tp:module($frame,$prefix,$ns,$desc) {
 		()
 };
 
-declare function tp:function($frame,$name,$args,$type,$body) {
+declare function core:import($frame,$prefix,$ns) {
+	if($frame("$transpile") eq "xq") then
+		xq:import($prefix, $ns)
+	else if($frame("$transpile") eq "js") then
+		js:import($prefix, $ns)
+	else
+		()
+};
+
+declare function core:import($frame,$prefix,$ns,$location) {
+	if($frame("$transpile") eq "xq") then
+		xq:import($prefix, $ns, $location)
+	else if($frame("$transpile") eq "js") then
+		js:import($prefix, $ns, $location)
+	else
+		()
+};
+
+declare function core:define($frame,$name,$args,$type,$body) {
+	if($frame("$transpile") eq "xq") then
+		xq:define($name, $args, $type, $body)
+	else if($frame("$transpile") eq "js") then
+		js:define($name, $args, $type, $body)
+	else
+		()
+};
+
+declare function core:function($frame,$name,$args,$type,$body) {
 	let $n := console:log($body) return
 	if($frame("$transpile") eq "xq") then
 		xq:function($name, $args, $type, $body)
@@ -30,14 +75,14 @@ declare function tp:function($frame,$name,$args,$type,$body) {
 		()
 };
 
-declare function tp:process-args($frame,$name,$args){
+declare function core:process-args($frame,$name,$args){
 	a:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
 			a:for-each-at($arg,function($_,$at){
-				tp:transpile($_,map:put($frame,"$at",$at),$name = "function")
+				core:transpile($_,map:put($frame,"$at",$at),$name = "function")
 			})
 		else if($arg instance of map(xs:string,item()?)) then
-			tp:transpile($arg,$frame,$name = "function" and $arg("name") = $tp:types)
+			core:transpile($arg,$frame,$name = "function" and $arg("name") = $core:types)
 		else if($arg eq ".") then
 			"$_0"
 		else if($arg eq "$") then
@@ -52,22 +97,22 @@ declare function tp:process-args($frame,$name,$args){
 		else if(matches($arg,"^_[" || $raddle:suffix || "]?$")) then
 			replace($arg,"^_","_" || $frame("$at"))
 		else
-			tp:serialize($arg,$frame)
+			core:serialize($arg,$frame)
 	})
 };
 
-declare function tp:transpile($value,$frame) {
-	tp:transpile($value,$frame,false())
+declare function core:transpile($value,$frame) {
+	core:transpile($value,$frame,false())
 };
 
-(:declare function tp:transpile($value,$frame,$top){:)
-(:	tp:transpile($value,$frame,$top,1):)
+(:declare function core:transpile($value,$frame,$top){:)
+(:	core:transpile($value,$frame,$top,1):)
 (:};:)
 
-declare function tp:transpile($value,$frame,$top){
+declare function core:transpile($value,$frame,$top){
 	if($value instance of array(item()?)) then
 		a:fold-left($value,"",function($pre,$cur){
-			$pre || "&#10;" || tp:transpile($cur,$frame,$top)
+			$pre || "&#10;" || core:transpile($cur,$frame,$top)
 		})
 	else if($value instance of map(xs:string,item()?)) then
 		let $args := $value("args")
@@ -76,9 +121,9 @@ declare function tp:transpile($value,$frame,$top){
 				"seq"
 			else
 				$value("name")
-		let $args := tp:process-args($frame,$name,$args)
+		let $args := core:process-args($frame,$name,$args)
 		return
-			if(matches($name,"^[" || $raddle:ncname || "]+:") = false()) then
+			if(matches($name,"^([^:]|core:)[" || $raddle:ncname || "]+")) then
 				let $fn := function-lookup(QName("http://raddle.org/transpile", $name),array:size($args))
 				let $n := console:log(($name,array:size($args), exists($fn)))
 				return apply($fn,$args)
@@ -88,14 +133,14 @@ declare function tp:transpile($value,$frame,$top){
 		if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
 			replace($value,"^_","\$_" || $frame("$at"))
 		else
-			tp:serialize($value,$frame)
+			core:serialize($value,$frame)
 };
 
-declare function tp:convert($string){
+declare function core:convert($string){
 	if(matches($string,"^_[\?\*\+]?$|[\?\*\+:]+|^(\$.*)$|^([^#]+#[0-9]+)$|^(&quot;[^&quot;]*&quot;)$")) then
 		$string
-	else if(map:contains($raddle:auto-converted,$string)) then
-		$raddle:auto-converted($string)
+	else if(map:contains($core:auto-converted,$string)) then
+		$core:auto-converted($string)
 	else
 		if(string(number($string)) = "NaN") then
 			"&quot;" || util:unescape-uri($string,"UTF-8") || "&quot;"
@@ -103,26 +148,26 @@ declare function tp:convert($string){
 			number($string)
 };
 
-declare function tp:serialize($value,$params){
+declare function core:serialize($value,$params){
 	if($value instance of map(xs:string, item()?)) then
-		$value("name") || (if(map:contains($value,"args")) then tp:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
+		$value("name") || (if(map:contains($value,"args")) then core:serialize($value("args"),$params) else "()") || (if(map:contains($value,"suffix")) then $value("suffix") else "")
 	else if($value instance of array(item()?)) then
 		"(" || string-join(array:flatten(array:for-each($value,function($val){
-			tp:serialize($val,$params)
+			core:serialize($val,$params)
 		})),",") || ")"
 	else
-		tp:convert($value)
+		core:convert($value)
 };
 
-declare function tp:typegen($type,$name) {
-	tp:typegen($type,$name,())
+declare function core:typegen($type,$name) {
+	core:typegen($type,$name,())
 };
 
-declare function tp:typegen($type,$name,$val) {
-	tp:typegen($type,$name,(),())
+declare function core:typegen($type,$name,$val) {
+	core:typegen($type,$name,(),())
 };
 
-declare function tp:typegen($type,$name,$val,$frame) {
+declare function core:typegen($type,$name,$val,$frame) {
 	let $cp := string-to-codepoints($name)
 	let $suffix :=
 		if($cp[last()] = (42,43,45,63)) then
@@ -146,46 +191,50 @@ declare function tp:typegen($type,$name,$val,$frame) {
 				()
 };
 
-declare function tp:integer() {
-	tp:typegen("integer",())
+declare function core:integer() {
+	core:typegen("integer",())
 };
 
-declare function tp:integer($name) {
-	tp:typegen("integer",$name)
+declare function core:integer($name) {
+	core:typegen("integer",$name)
 };
 
-declare function tp:integer($name,$val) {
-	tp:typegen("integer",$name,$val)
+declare function core:integer($name,$val) {
+	core:typegen("integer",$name,$val)
 };
 
-declare function tp:integer($frame,$name,$val) {
-	tp:typegen("integer",$name,$val,$frame)
+declare function core:integer($frame,$name,$val) {
+	core:typegen("integer",$name,$val,$frame)
+};
+
+declare function core:item(){
+	core:typegen("item",())
 };
 (::)
-(:declare function tp:integer($name,$val,$context) {:)
-(:	tp:typegen("xs:integer",$name)($val,$context):)
+(:declare function core:integer($name,$val,$context) {:)
+(:	core:typegen("xs:integer",$name)($val,$context):)
 (:};:)
 (::)
-(:declare function tp:integer($name,$val,$body,$context) {:)
-(:	tp:typegen("xs:integer",$name,$body)($val,$context):)
+(:declare function core:integer($name,$val,$body,$context) {:)
+(:	core:typegen("xs:integer",$name,$body)($val,$context):)
 (:};:)
 (::)
-(:declare function tp:string() {:)
+(:declare function core:string() {:)
 (:	"xs:string":)
 (:};:)
 (::)
-(:declare function tp:string($name) {:)
-(:	tp:typegen("xs:string",$name):)
+(:declare function core:string($name) {:)
+(:	core:typegen("xs:string",$name):)
 (:};:)
 (::)
-(:declare function tp:string($name,$val) {:)
-(:	tp:typegen("xs:string",$name,$val):)
+(:declare function core:string($name,$val) {:)
+(:	core:typegen("xs:string",$name,$val):)
 (:};:)
 (::)
-(:declare function tp:string($name,$val,$context) {:)
-(:	tp:typegen("xs:string",$name)($val,$context):)
+(:declare function core:string($name,$val,$context) {:)
+(:	core:typegen("xs:string",$name)($val,$context):)
 (:};:)
 (::)
-(:declare function tp:integer($name,$val,$body,$context) {:)
-(:	tp:typegen("xs:string",$name,$body)($val,$context):)
+(:declare function core:integer($name,$val,$body,$context) {:)
+(:	core:typegen("xs:string",$name,$body)($val,$context):)
 (:};:)
