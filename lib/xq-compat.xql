@@ -229,7 +229,7 @@ declare function xqc:seqtype($parts,$ret){
 	let $maybe-seqtype := if(matches($head,$xqc:operator-regexp)) then xqc:op-num($head) else 0
 	return
 		if($maybe-seqtype eq 20.06) then
-			xqc:body(tail($parts),concat($ret,","),(20.06))
+			xqc:body($parts,concat($ret,","),(21.06))
 		else if($maybe-seqtype eq 24) then
 			xqc:seqtype(subsequence($parts,3),$ret || $parts[2]/string())
 		else
@@ -258,17 +258,16 @@ declare function xqc:params($parts,$ret){
 			let $next := $parts[2]/string()
 			return
 			if($next = "=#24=") then
-				xqc:as(replace($maybe-param,"^\$",""),subsequence($parts,3),$ret)
+				xqc:as($maybe-param,subsequence($parts,3),$ret)
 			else
-				xqc:params(tail($parts),$ret || replace($maybe-param,"^\$",""))
+				xqc:params(tail($parts),$ret || $maybe-param)
 		else
 			xqc:params(tail($parts),$ret)
 };
 
 declare function xqc:fn($parts,$ret){
 	(: TODO $parts(2) should be a paren, or error :)
-	(: remove last } :)
-	xqc:params(subsequence($parts,3),$ret || head($parts)/fn:group[@nr=1]/string() || ",(")
+	xqc:params(tail($parts),$ret || head($parts)/fn:group[@nr=1]/string() || ",(),(")
 };
 
 declare function xqc:ns($parts,$ret){
@@ -283,16 +282,20 @@ declare function xqc:var($parts,$ret){
 	return string-join($rest)
 };
 
-declare function xqc:annot($parts,$ret){
+declare function xqc:annot($parts,$ret) {
+	xqc:annot($parts,$ret,"")
+};
+
+declare function xqc:annot($parts,$ret,$annot){
 	let $maybe-annot := head($parts)/fn:group[@nr=1]/string()
 	let $rest := tail($parts)
 	return
 		if(matches($maybe-annot,"^%")) then
-			xqc:annot($rest,$ret || $maybe-annot || "%")
+			xqc:annot($rest,$ret,replace($maybe-annot,"^%","-"))
 		else if($maybe-annot = "=#21#06=") then
-			xqc:fn($rest,$ret || "core:define($,")
+			xqc:fn($rest,$ret || "core:define" || $annot || "($,")
 		else if($maybe-annot = "=#23#05=") then
-			xqc:var($rest,$ret || "core:var(")
+			xqc:var($rest,$ret || "core:var" || $annot || "(")
 		else $ret
 (:			xqc:decl(($maybe-annot,$rest),""):)
 };
@@ -374,7 +377,7 @@ declare function xqc:closer($a as xs:decimal,$b as xs:decimal*){
 };
 
 declare function xqc:closer($a as xs:decimal,$b as xs:decimal*,$c as xs:integer){
-	if(empty($b) or xqc:eq($a,(2.08,2.11)) = false()) then
+	if(empty($b) or xqc:eq($a,2.08) = false()) then
 		$c
 	else
 		xqc:closer(head($b),tail($b),$c + 1)
@@ -402,9 +405,9 @@ declare function xqc:anon($head,$parts,$ret,$lastseen) {
 		xqc:params(tail($parts),concat($ret,","))
 	else if(matches($head,"^\$")) then
 		if($next = "=#24=") then
-			xqc:anon($next,subsequence($parts,3),concat($ret,$parts[2]/string(),"(",replace($head,"^\$",""),")"),$lastseen)
+			xqc:anon($next,subsequence($parts,3),concat($ret,$parts[2]/string(),"(",$head,")"),$lastseen)
 		else
-			xqc:anon($next,tail($parts),$ret || replace($head,"^\$",""),$lastseen)
+			xqc:anon($next,tail($parts),$ret || $head,$lastseen)
 	else if(matches($head,"^\)")) then
 		if($next = "=#24=") then
 			xqc:anon($next,subsequence($parts,3),concat($ret,"),",$parts[2]/string(),"(),"),$lastseen)
@@ -416,7 +419,6 @@ declare function xqc:anon($head,$parts,$ret,$lastseen) {
 
 declare function xqc:map($parts,$ret,$lastseen){
 	let $head := head($parts)/string()
-(:	let $n := console:log($head):)
 	let $op := if(matches($head,$xqc:operator-regexp)) then xqc:op-num($head) else 0
 	return
 (:		if($op eq 20.07) then:)
@@ -437,7 +439,18 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	if($no eq 1) then
-		xqc:body($rest,concat($ret,","),$lastseen)
+		let $else := $lastseen[last()] eq 2.08
+		let $ret :=
+			if($else) then
+				concat($ret,"),")
+			else
+				concat($ret,",")
+		let $lastseen :=
+			if($else) then
+				xqc:pop($lastseen)
+			else
+				$lastseen
+		return xqc:body($rest,$ret,$lastseen)
 	else if($no eq 26) then
 		xqc:body($rest,concat($ret,","),xqc:appd($lastseen,$no))
 	else if($no eq 25.01) then
@@ -448,24 +461,19 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 		xqc:map(tail($rest),concat($ret,"map:new("),xqc:appd($lastseen,20.06))
 	else
 		let $old := $lastseen
-		let $prevseen := if(empty($lastseen)) then 0 else $lastseen[last()]
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
-(:		let $close :=:)
-(:			if(xqc:eq($no,(2.08,2.11)) and xqc:eq($prevseen,(2.08,2.11))) then:)
-(:				xqc:closer($prevseen,subsequence($lastseen,xqc:last-index-of($lastseen,20.06),count($lastseen))):)
-(:			else:)
-(:				0:)
+		let $letcloser := $no eq 2.09 and not($lastseen[last()] eq 20.06 or empty($lastseen)) and substring($ret,string-length($ret)) ne ","
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
-					if($no eq 2.09 and $prevseen eq 2.10) then ")," else "",
+					if($letcloser) then if($lastseen[last()] eq 2.08 and $lastseen[last() - 1] eq 2.10) then "))," else ")," else "",
 					if($positional) then
 						xqc:op-str(20.05)
 					else
 						xqc:op-str($no),
 					if($no eq 2.06) then "" else "(",
 					if(xqc:eq($no, 2.09)) then
-						concat("$,",replace($next,"^\$|\s",""))
+						replace($next,"\s","")
 					else if(xqc:eq($no, 20.01)) then
 						(: prepare filter :)
 						concat(
@@ -483,12 +491,16 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			else if($no eq 20.07) then
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
 				(: add one extra closed paren by consing 2.11 :)
-				return string-join((subsequence($lastseen,$lastindex,count($lastseen)),2.11)[xqc:eq(.,(2.08,2.11))] ! ")")
+				let $ret := string-join((subsequence($lastseen,$lastindex,count($lastseen))[xqc:eq(.,(2.08,2.11))], 2.11) ! ")")
+				return concat($ret,if($lastseen[$lastindex - 1] eq 21.06) then ")" else "")
 			else if(xqc:eq($no, (2.07,2.08,2.10))) then
 (:				concat(if($close>0) then string-join((1 to $close) ! ")") else "",","):)
 				","
 			else if($no eq 2.11) then
-				"),"
+				if($lastseen[last()] eq 2.08) then
+					")),"
+				else
+					"),"
 			else if(xqc:eq($no,20.02)) then
 				")"
 			else if($no eq 20.06) then
@@ -502,7 +514,16 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				tail($rest)
 		let $lastseen :=
 			if(xqc:eq($no, (2.06,2.09,20.01))) then
-				let $lastseen := if($no eq 2.09 and $prevseen eq 2.10) then xqc:pop($lastseen) else $lastseen
+				let $lastseen :=
+					if($letcloser) then
+						let $lastseen :=
+							if($lastseen[last()] eq 2.08 and $lastseen[last() -1] eq 2.10) then
+								xqc:pop($lastseen)
+							else
+								$lastseen
+						return if($lastseen[last()] eq 2.10) then xqc:pop($lastseen) else $lastseen
+				else
+					$lastseen
 				return xqc:appd($lastseen,$no)
 			else if($no = 20.07) then
 				(: eat up until 20.06 :)
@@ -513,14 +534,19 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 (:				else:)
 					xqc:repl($lastseen,$no)
 			else if($no eq 2.11) then
-				xqc:pop($lastseen)
+				let $lastseen :=
+					if($lastseen[last()] eq 2.08) then
+						xqc:pop($lastseen)
+					else
+						$lastseen
+				return xqc:pop($lastseen)
 			else if($no eq 20.06 or round($no) eq 21) then
 				xqc:appd($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
 				$lastseen
-		let $nu := console:log($no || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))
+(:		let $nu := console:log($no || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")):)
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -573,7 +599,6 @@ declare function xqc:body($parts,$ret,$lastseen){
 declare function xqc:import($parts,$ret) {
 	let $rest := subsequence($parts,6)
 	let $maybe-at := head($rest)/string()
-(:	let $n := console:log($maybe-at):)
 	return
 		if($maybe-at = "=#23#07=") then
 			xqc:block(subsequence($rest,3),concat($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
@@ -706,7 +731,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 				if($key eq 26) then
 					"(\s?)" || $arg || "(\s*[^\p{L}])"
 				else if($key eq 2.10) then
-					"(\s?):\s*=(\s?)"
+					"(\s?):\s*=([^#])"
 				else if($key eq 20.03) then
 					"(\s?)" || $arg || "(\s*[" || $xqc:ncname || "\(]+)"
 				else if($key = (8.02,17.02)) then
