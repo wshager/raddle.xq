@@ -30,6 +30,7 @@ declare function js:cc($name){
 	}))
 };
 
+
 declare function js:define($name,$def,$args,$type,$body) {
 	let $args := array:for-each($args,function($_){
 		let $n := console:log($_) return
