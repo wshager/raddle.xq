@@ -56,11 +56,11 @@ declare function core:import($frame,$prefix,$ns,$location) {
 		()
 };
 
-declare function core:define($frame,$name,$args,$type,$body) {
+declare function core:define($frame,$name,$desc,$args,$type,$body) {
 	if($frame("$transpile") eq "xq") then
-		xq:define($name, $args, $type, $body)
+		xq:define($name, $desc, $args, $type, $body)
 	else if($frame("$transpile") eq "js") then
-		js:define($name, $args, $type, $body)
+		js:define($name, $desc, $args, $type, $body)
 	else
 		()
 };
@@ -123,7 +123,7 @@ declare function core:transpile($value,$frame,$top){
 				$value("name")
 		let $args := core:process-args($frame,$name,$args)
 		return
-			if(matches($name,"^([^:]|core:)[" || $raddle:ncname || "]+")) then
+			if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
 				let $fn := function-lookup(QName("http://raddle.org/transpile", $name),array:size($args))
 				let $n := console:log(($name,array:size($args), exists($fn)))
 				return apply($fn,$args)
@@ -134,6 +134,18 @@ declare function core:transpile($value,$frame,$top){
 			replace($value,"^_","\$_" || $frame("$at"))
 		else
 			core:serialize($value,$frame)
+};
+
+declare function core:and($a,$b){
+	$a || " &amp;&amp; " || $b
+};
+
+declare function core:eq($a,$b){
+	$a || " == " || $b
+};
+
+declare function core:concat($a,$b){
+	$a || " + " || $b
 };
 
 declare function core:convert($string){
