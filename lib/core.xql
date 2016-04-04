@@ -25,7 +25,7 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 	let $map := a:fold-left-at($args,map{},function($pre,$_,$i){
 		$_($frame)($pre,(),$i)
 	})
-	let $n := console:log($map)
+(:	let $n := console:log($map):)
 	return
 	map:new(($frame,
 		map:entry("$functions",core:describe($frame("$functions"),$name,$desc,$args,$type)),
@@ -64,9 +64,7 @@ declare function core:get-name-suffix($name){
 };
 
 declare function core:typegen($type,$name,$val) {
-	let $parts := core:get-name-suffix($name)
-	let $name := $parts[1]
-	let $suffix := $parts[2]
+	let $name := replace($name,"^\$","")
 	return
 			function($frame) {
 				(: _check($val,$type);:)
@@ -75,15 +73,26 @@ declare function core:typegen($type,$name,$val) {
 };
 
 declare function core:typegen($type,$name) {
-	let $parts := core:get-name-suffix($name)
-	let $name := $parts[1]
-	let $suffix := $parts[2]
+	let $name := replace($name,"^\$","")
 	return
 		function($frame,$val,$i) {
 			(: add type to map just for posterity :)
 			let $val := if(empty($val)) then $type else $val
 			return map:put($frame,if($name eq "") then string($i) else $name,$val)
 		}
+};
+
+declare function core:item() {
+	(: TODO check a return type :)
+	"item()"
+};
+
+declare function core:item($name) {
+	core:typegen("item()",$name)
+};
+
+declare function core:item($name,$val) {
+	core:typegen("item()",$name,$val)
 };
 
 declare function core:integer() {
@@ -114,6 +123,7 @@ declare function core:string($name,$val) {
 declare function core:apply($frame,$name,$args){
 	let $self := core:is-current-module($frame,$name)
 	let $f := core:resolve-function($frame, $name, $self)
+	let $frame := map:put($frame,"$caller",$name)
 	return
 		if($self) then
 			$f(core:process-args($frame,$args))
@@ -142,17 +152,17 @@ declare function core:resolve-function($frame,$name,$self){
 };
 
 declare function core:process-args($frame,$args){
-	let $n: = console:log($args) return
 	a:for-each($args,function($arg){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
 			let $fn-seq := core:is-fn-seq($arg)
 			return
-				if($fn-seq) then
+				if($fn-seq = true()) then
 					n:eval($arg)
 				else
 					a:for-each($arg,function($_){
-						n:eval($_)
+						(: FIXME properly convert params :)
+						n:eval(if(matches($_,"^\$")) then map { "name":"core:item", "args": [$_] } else $_)
 					})
 		else if($arg instance of map(xs:string,item()?)) then
 			n:eval($arg)
@@ -162,7 +172,10 @@ declare function core:process-args($frame,$args){
 			$frame
 		else if(matches($arg,concat("^\$[",$raddle:ncname,"]+$"))) then
 			(: retrieve bound value :)
-			$frame(replace($arg,"^\$",""))
+			if(matches($frame("$caller"),"^core:")) then
+				$arg
+			else
+				$frame(replace($arg,"^\$",""))
 		else if(matches($arg,concat("^[",$raddle:ncname,"]?:?[",$raddle:ncname,"]+#(\p{N}|N)+"))) then
 			core:resolve-function($frame,$arg)
 		else
@@ -181,7 +194,7 @@ declare %private function core:is-fn-seq($value) {
 					(: only check strings in sequence :)
 					core:is-fn-seq($_("args"))
 				else
-					$_ instance of xs:string and matches($_,"^\.$|^\$")
+					$_ instance of xs:string and matches($_,"^\.$|^\$$")
 			})
 		))
 };
