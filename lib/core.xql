@@ -42,9 +42,9 @@ declare function core:describe($frame,$name,$desc,$args,$type){
 	)
 };
 
-declare function core:function($frame,$name,$args,$type,$body) {
+declare function core:function($args,$type,$body) {
 	(: body+args are quotations :)
-	map:put($frame,concat($name,"#",array:size($args)),n:bind($body,$args,$type))
+	n:bind($body,$args,$type)
 };
 
 declare function core:typecheck($type,$val){
@@ -63,23 +63,19 @@ declare function core:get-name-suffix($name){
 			($name,"")
 };
 
-declare function core:typegen($type,$name,$val) {
-	let $name := replace($name,"^\$","")
-	return
-			function($frame) {
-				(: _check($val,$type);:)
-				map:put($frame,$name,$val)
-			}
+declare function core:typegen($frame,$type,$name,$val) {
+(:	function($frame) {:)
+		(: _check($val,$type);:)
+		map:put($frame,$name,$val)
+(:	}:)
 };
 
-declare function core:typegen($type,$name) {
-	let $name := replace($name,"^\$","")
-	return
-		function($frame,$val,$i) {
-			(: add type to map just for posterity :)
-			let $val := if(empty($val)) then $type else $val
-			return map:put($frame,if($name eq "") then string($i) else $name,$val)
-		}
+declare function core:typegen($frame,$type,$name) {
+	function($frame,$val,$i) {
+		(: add type to map just for posterity :)
+		let $val := if(empty($val)) then $type else $val
+		return map:put($frame,if($name eq "") then string($i) else $name,$val)
+	}
 };
 
 declare function core:item() {
@@ -87,12 +83,12 @@ declare function core:item() {
 	"item()"
 };
 
-declare function core:item($name) {
-	core:typegen("item()",$name)
+declare function core:item($frame,$name) {
+	core:typegen($frame,"item()",$name)
 };
 
-declare function core:item($name,$val) {
-	core:typegen("item()",$name,$val)
+declare function core:item($frame,$name,$val) {
+	core:typegen($frame,"item()",$name,$val)
 };
 
 declare function core:integer() {
@@ -100,29 +96,31 @@ declare function core:integer() {
 	"xs:integer"
 };
 
-declare function core:integer($name) {
-	core:typegen("xs:integer",$name)
+declare function core:integer($frame,$name) {
+	core:typegen($frame,"xs:integer",$name)
 };
 
-declare function core:integer($name,$val) {
-	core:typegen("xs:integer",$name,$val)
+declare function core:integer($frame,$name,$val) {
+	core:typegen($frame,"xs:integer",$name,$val)
 };
 
 declare function core:string() {
 	"xs:string"
 };
 
-declare function core:string($name) {
-	core:typegen("xs:string",$name)
+declare function core:string($frame,$name) {
+	core:typegen($frame,"xs:string",$name)
 };
 
-declare function core:string($name,$val) {
-	core:typegen("xs:string",$name,$val)
+declare function core:string($frame,$name,$val) {
+	core:typegen($frame,"xs:string",$name,$val)
 };
 
 declare function core:apply($frame,$name,$args){
 	let $self := core:is-current-module($frame,$name)
 	let $f := core:resolve-function($frame, $name, $self)
+	let $frame := map:put($frame,"$callstack",array:append($frame("$callstack"),$name))
+(:	let $n := console:log($frame("$callstack")):)
 	let $frame := map:put($frame,"$caller",$name)
 	return
 		if($self) then
@@ -152,18 +150,19 @@ declare function core:resolve-function($frame,$name,$self){
 };
 
 declare function core:process-args($frame,$args){
-	a:for-each($args,function($arg){
+	a:for-each-at($args,function($arg,$at){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
-			let $fn-seq := core:is-fn-seq($arg)
+			let $is-params := ($frame("$caller") eq "core:define#6" and $at = 4) or ($frame("$caller") eq "core:function#3" and $at = 1)
+			let $is-body := $frame("$caller") eq "core:define#6" and $at = 6
 			return
-				if($fn-seq = true()) then
-					n:eval($arg)
-				else
+				if($is-params or (core:is-fn-seq($arg) = false() and $is-body = false())) then
 					a:for-each($arg,function($_){
 						(: FIXME properly convert params :)
-						n:eval(if(matches($_,"^\$")) then map { "name":"core:item", "args": [$_] } else $_)
+						n:eval(if($_ instance of xs:string and matches($_,"^\$")) then map { "name":"core:item", "args": ["$",replace($_,"^\$","")] } else $_)
 					})
+				else
+					n:eval($arg)
 		else if($arg instance of map(xs:string,item()?)) then
 			n:eval($arg)
 		else if($arg eq ".") then
@@ -172,10 +171,7 @@ declare function core:process-args($frame,$args){
 			$frame
 		else if(matches($arg,concat("^\$[",$raddle:ncname,"]+$"))) then
 			(: retrieve bound value :)
-			if(matches($frame("$caller"),"^core:")) then
-				$arg
-			else
-				$frame(replace($arg,"^\$",""))
+			$frame(replace($arg,"^\$",""))
 		else if(matches($arg,concat("^[",$raddle:ncname,"]?:?[",$raddle:ncname,"]+#(\p{N}|N)+"))) then
 			core:resolve-function($frame,$arg)
 		else
@@ -196,7 +192,7 @@ declare %private function core:is-fn-seq($value) {
 				else
 					$_ instance of xs:string and matches($_,"^\.$|^\$$")
 			})
-		))
+		)) = true()
 };
 
 declare function core:import($frame,$prefix,$uri){
