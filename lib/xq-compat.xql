@@ -322,28 +322,34 @@ declare function xqc:module($parts,$ret){
 };
 
 declare function xqc:repl($lastseen as xs:decimal*,$no as xs:decimal){
-	xqc:repl($lastseen,$no,$no - xs:decimal(0.01))
+	let $last := index-of($lastseen,$no - xs:decimal(0.01))[last()]
+	return (remove($lastseen,$last),$no)
 };
 
-declare function xqc:repl($lastseen as xs:decimal*,$no as xs:decimal,$repl as xs:decimal){
-	reverse(xqc:repl(reverse($lastseen),$no,$repl,()))
+(:declare function xqc:repl($lastseen as xs:decimal*,$no as xs:decimal,$repl as xs:decimal){:)
+(:	reverse(xqc:repl(reverse($lastseen),$no,$repl,())):)
+(:};:)
+(:declare function xqc:repl($lastseen as xs:decimal*,$no as xs:decimal,$repl as xs:decimal,$ret as xs:decimal*){:)
+(:	if(count($lastseen)>0) then:)
+(:		if(head($lastseen) eq $repl) then:)
+(:			($ret, $no, tail($lastseen)):)
+(:		else:)
+(:			xqc:repl(tail($lastseen),$no,$repl,($ret,head($lastseen))):)
+(:	else:)
+(:		$ret:)
+(:};:)
+
+declare function xqc:close($lastseen as xs:decimal*,$no as xs:decimal){
+	xqc:close(reverse($lastseen), $no, ())
 };
 
-declare function xqc:repl($lastseen as xs:decimal*,$no as xs:decimal,$repl as xs:decimal,$ret as xs:decimal*){
-	if(count($lastseen)>0) then
-		if(head($lastseen) eq $repl) then
-			($ret, $no, tail($lastseen))
-		else
-			xqc:repl(tail($lastseen),$no,$repl,($ret,head($lastseen)))
+declare function xqc:close($lastseen as xs:decimal*,$no as xs:decimal, $ret as xs:decimal*){
+	if(empty($lastseen) or $no eq 0) then
+		reverse(($lastseen,$ret))
+	else if(head($lastseen) ne 0.01) then
+		xqc:close(tail($lastseen),$no,(head($lastseen),$ret))
 	else
-		$ret
-};
-
-declare function xqc:close($lastseen as xs:decimal*,$no as xs:decimal,$close as xs:integer){
-	if(empty($lastseen) or $close=0) then
-		xqc:repl($lastseen,$no)
-	else
-		xqc:close(xqc:pop($lastseen),$no, $close - 1)
+		xqc:close(tail($lastseen),$no - 1, $ret)
 };
 
 declare function xqc:appd($lastseen as xs:decimal*,$no as xs:decimal){
@@ -363,7 +369,6 @@ declare function xqc:inst($lastseen as xs:decimal*,$no as xs:decimal,$before as 
 	else
 		$ret
 };
-
 
 declare function xqc:eq($a as xs:decimal,$b as xs:decimal*){
 	$a = $b
@@ -440,6 +445,7 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	if($no eq 1) then
+		(: FIXME don't close a sequence :)
 		let $else := $lastseen[last()] eq 2.08
 		let $ret :=
 			if($else) then
@@ -461,7 +467,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	else
 		let $old := $lastseen
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
-		let $letcloser := $no eq 2.09 and not($lastseen[last()] eq 20.06 or empty($lastseen)) and substring($ret,string-length($ret)) ne ","
+		let $letcloser := $no eq 2.09 and not($lastseen[last()] = (2.07,20.06) or empty($lastseen)) and substring($ret,string-length($ret)) ne ","
 		let $ret := concat($ret,
 			if(xqc:eq($no,(2.06,2.09,20.01,20.04))) then
 				concat(
@@ -470,7 +476,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						xqc:op-str(20.05)
 					else
 						xqc:op-str($no),
-					if($no eq 2.06) then "" else "(",
+					"(",
 					if(xqc:eq($no, 2.09)) then
 						concat("$",replace($next,"^\$|\s",""))
 					else if(xqc:eq($no, 20.01)) then
@@ -494,8 +500,12 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				(: add one extra closed paren by consing 2.11 :)
 				let $ret := string-join((subsequence($lastseen,$lastindex,count($lastseen))[xqc:eq(.,(2.08,2.11))], 2.11) ! ")")
 				return concat($ret,if($lastseen[$lastindex - 1] eq 21.06) then ")" else "")
-			else if(xqc:eq($no, (2.07,2.08,2.10))) then
+			else if(xqc:eq($no, 2.07)) then
 (:				concat(if($close>0) then string-join((1 to $close) ! ")") else "",","):)
+				"),"
+			else if($no eq 2.08) then
+				","
+			else if($no eq 2.10) then
 				","
 			else if($no eq 2.11) then
 				if($lastseen[last()] eq 2.08) then
@@ -586,6 +596,16 @@ declare function xqc:body($parts,$ret,$lastseen){
 						})
 					else
 						$rest
+				let $lastseen :=
+					if(matches($head,"[\(\)]+")) then
+						let $cp := string-to-codepoints($head)
+						let $old := $lastseen
+						let $lastseen := ($lastseen,$cp[. eq 40] ! 0.01)
+						let $lastseen := xqc:close($lastseen,count($cp[. eq 41]))
+						let $n := console:log(($next," || ",string-join($old,",")," => ",string-join($lastseen,",")," || ",string-join($cp,",")))
+						return $lastseen
+					else
+						$lastseen
 				return
 					if(matches($head,$xqc:operator-regexp)) then
 						xqc:body-op(xqc:op-num($head),$next,$lastseen,$rest,$ret)
