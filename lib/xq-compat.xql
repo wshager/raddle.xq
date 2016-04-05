@@ -166,6 +166,7 @@ declare variable $xqc:types := [
 ];
 
 declare variable $xqc:operator-map := map {
+	2.09: "item",
 	5.01: "eq",
 	5.02: "ne",
 	5.03: "lt",
@@ -398,7 +399,7 @@ declare function xqc:anon($head,$parts,$ret,$lastseen) {
 	let $next := head($parts)/string()
 	return
 	if($op eq 20.06) then
-		xqc:body($parts,$ret,xqc:appd($lastseen,$op))
+		xqc:body($parts,concat($ret,"("),xqc:appd($lastseen,$op))
 	else if($op eq 1) then
 		xqc:anon(head($parts)/string(),tail($parts),concat($ret,","),$lastseen)
 	else if(matches($head,"=#1=")) then
@@ -451,12 +452,10 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			else
 				$lastseen
 		return xqc:body($rest,$ret,$lastseen)
-	else if($no eq 26) then
-		xqc:body($rest,concat($ret,","),xqc:appd($lastseen,$no))
 	else if($no eq 25.01) then
 		xqc:comment($rest,$ret,$lastseen)
 	else if($no eq 21.06) then
-		xqc:anon($next,tail($rest),concat($ret,"=#21#06=(("),$lastseen)
+		xqc:anon($next,tail($rest),concat($ret,"=#21#06=(("),xqc:appd($lastseen,$no))
 	else if($no eq 21.07) then
 		xqc:map(tail($rest),concat($ret,"map:new("),xqc:appd($lastseen,20.06))
 	else
@@ -473,7 +472,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						xqc:op-str($no),
 					if($no eq 2.06) then "" else "(",
 					if(xqc:eq($no, 2.09)) then
-						replace($next,"\s","")
+						concat("$",replace($next,"^\$|\s",""))
 					else if(xqc:eq($no, 20.01)) then
 						(: prepare filter :)
 						concat(
@@ -488,6 +487,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						, $next)
 					else ""
 				)
+			else if($no = 26) then
+				","
 			else if($no eq 20.07) then
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
 				(: add one extra closed paren by consing 2.11 :)
@@ -525,6 +526,9 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				else
 					$lastseen
 				return xqc:appd($lastseen,$no)
+			else if($no = 26) then
+				let $lastseen := if($lastseen[last()] eq 26) then xqc:pop($lastseen) else $lastseen
+				return xqc:appd($lastseen,26)
 			else if($no = 20.07) then
 				(: eat up until 20.06 :)
 				subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
@@ -546,7 +550,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				xqc:pop($lastseen)
 			else
 				$lastseen
-(:		let $nu := console:log($no || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")):)
+		let $nu := console:log($no || " :: " || string-join($old,",") || " -> " || string-join($lastseen,",") || " || " || replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))
 		return xqc:body($rest,$ret,$lastseen)
 };
 
