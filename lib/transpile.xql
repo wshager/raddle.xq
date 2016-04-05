@@ -65,12 +65,12 @@ declare function core:define($frame,$name,$desc,$args,$type,$body) {
 		()
 };
 
-declare function core:function($frame,$name,$args,$type,$body) {
+declare function core:function($args,$type,$body) {
 	let $n := console:log($body) return
 	if($frame("$transpile") eq "xq") then
-		xq:function($name, $args, $type, $body)
+		xq:function($args, $type, $body)
 	else if($frame("$transpile") eq "js") then
-		js:function($name, $args, $type, $body)
+		js:function($args, $type, $body)
 	else
 		()
 };
@@ -171,56 +171,66 @@ declare function core:serialize($value,$params){
 		core:convert($value)
 };
 
-declare function core:typegen($type,$name) {
-	core:typegen($type,$name,())
-};
-
-declare function core:typegen($type,$name,$val) {
-	core:typegen($type,$name,(),())
-};
-
-declare function core:typegen($type,$name,$val,$frame) {
-	let $cp := string-to-codepoints($name)
-	let $suffix :=
-		if($cp[last()] = (42,43,45,63)) then
-			codepoints-to-string($cp[last()])
-		else
-			""
-	let $name := if($suffix eq "") then
-		$name
+declare function core:typegen($type) {
+	if($frame("$transpile") eq "xq") then
+		xq:typegen($type)
+	else if($frame("$transpile") eq "js") then
+		js:typegen($type)
 	else
-		codepoints-to-string(reverse(tail(reverse($cp))))
-	let $name := if($name) then concat("$",if(matches($name,"^&quot;.*&quot;$")) then raddle:clip-string($name) else $name) else ()
+		()
+};
+
+declare function core:typegen($type,$val) {
+	if($frame("$transpile") eq "xq") then
+		xq:typegen($type,$val)
+	else if($frame("$transpile") eq "js") then
+		js:typegen($type,$val)
+	else
+		()
+};
+
+declare function core:typegen($frame,$type,$name) {
+	core:typegen($frame,$type,$name,())
+};
+
+declare function core:typegen($frame,$type,$name,$val) {
+	let $name := concat("$",if(matches($name,"^&quot;.*&quot;$")) then raddle:clip-string($name) else $name)
 	return
-		if(empty($frame)) then
-			[$type, $name, $val, $suffix]
+		if($frame("$transpile") eq "xq") then
+			xq:typegen($type, $name, $val)
+		else if($frame("$transpile") eq "js") then
+			js:typegen($type, $name, $val)
 		else
-			if($frame("$transpile") eq "xq") then
-				xq:typegen($type, $name, $val, $suffix)
-			else if($frame("$transpile") eq "js") then
-				js:typegen($type, $name, $val, $suffix)
-			else
-				()
+			()
 };
 
 declare function core:integer() {
 	core:typegen("integer",())
 };
 
-declare function core:integer($name) {
-	core:typegen("integer",$name)
-};
-
-declare function core:integer($name,$val) {
-	core:typegen("integer",$name,$val)
+declare function core:integer($frame,$name) {
+	core:typegen($frame,"integer",$name)
 };
 
 declare function core:integer($frame,$name,$val) {
-	core:typegen("integer",$name,$val,$frame)
+	core:typegen($frame,"integer",$name,$val,$frame)
 };
 
 declare function core:item(){
-	core:typegen("item",())
+	core:typegen("item")
+};
+
+declare function core:item($val){
+	core:typegen("item",$val)
+};
+
+
+declare function core:item($frame,$name){
+	core:typegen($frame,"item",$name)
+};
+
+declare function core:item($frame,$name,$val){
+	core:typegen($frame,"item",$name,$val)
 };
 (::)
 (:declare function core:integer($name,$val,$context) {:)

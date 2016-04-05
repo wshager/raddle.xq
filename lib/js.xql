@@ -45,7 +45,7 @@ declare function js:define($name,$def,$args,$type,$body) {
 	return concat("export function ",js:cc(tokenize($name,":")[last()]),"(",string-join(array:flatten($args),","),") ",$type," { ",$check,"; return ",$body," };")
 };
 
-declare function js:function($name,$args,$type,$body) {
+declare function js:function($args,$type,$body) {
 	let $args := array:for-each($args,function($_){
 		let $n := console:log($_) return
 		apply(js:typegen#4,$_)
@@ -53,7 +53,7 @@ declare function js:function($name,$args,$type,$body) {
 	let $check := string-join(array:flatten(array:for-each($args,function($_){
 		concat("core.typecheck(",string-join(tokenize(replace($_,"^([^ ]*) /\* (\p{L}+)([\?\*\+]?) \*/$","$2,$1,$3"),",")[. ne ""],","),")")
 	})),";")
-	return concat("export function ",js:cc(tokenize($name,":")[last()]),"(",string-join(array:flatten($args),","),") ",$type," { ",$check,"; return ",$body," };")
+	return concat("function(",string-join(array:flatten($args),","),") ",$type," { ",$check,"; return ",$body," };")
 };
 
 declare function js:typegen($type,$name,$val,$suffix) {
