@@ -37,8 +37,8 @@ declare function rdl:map-put($map,$key,$val){
 	map:new(($map,map {$key := $val}))
 };
 
-declare function rdl:parse-strings($strings as element()*,$params) {
-	rdl:wrap(analyze-string(xqc:normalize-query(string-join(for-each(1 to count($strings),function($i){
+declare function rdl:parse-strings($strings as element()*,$normalizer,$params) {
+	rdl:wrap(analyze-string($normalizer(string-join(for-each(1 to count($strings),function($i){
 		if(name($strings[$i]) eq "match") then
 			"$%" || $i
 		else
@@ -46,12 +46,20 @@ declare function rdl:parse-strings($strings as element()*,$params) {
 	})),$params),$rdl:paren-regexp)/fn:match,$strings)
 };
 
+declare function rdl:normalize-query($query as xs:string?,$params){
+	replace($query,"&#9;|&#10;|&#13;","")
+};
+
 declare function rdl:parse($query as xs:string?){
 	rdl:parse($query,map {})
 };
 
 declare function rdl:parse($query as xs:string?,$params) {
-	rdl:parse-strings(analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*,$params)
+	rdl:parse-strings(
+		analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*,
+		if($params("$compat") = "xquery") then xqc:normalize-query#2 else rdl:normalize-query#2,
+		$params
+	)
 };
 
 declare function rdl:get-index-from-tokens($tok) {
