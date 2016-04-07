@@ -199,7 +199,7 @@ declare variable $xqc:operator-map := map {
 };
 
 declare function xqc:normalize-query($query as xs:string?,$params) {
-	let $query := replace(replace(replace(replace(replace($query,"%3E",">"),"%3C","<"),"%2C",","),"%3A",":"),"&#9;|&#10;|&#13;"," ")
+	let $query := replace(replace(replace(replace($query,"%3E",">"),"%3C","<"),"%2C",","),"%3A",":")
 	(: TODO backwards support RQL, >= and <= will always be incompatible, use general comparisons instead :)
 	(: normalize xquery :)
 	(: prevent operator overwrites :)
@@ -482,7 +482,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						xqc:op-str($no),
 					if($no eq 2.06) then "" else "(",
 					if(xqc:eq($no, 2.09)) then
-						concat("$",replace($next,"^\$|\s",""))
+						concat("$,",replace($next,"^\$|\s",""))
 					else if(xqc:eq($no, 20.01)) then
 						(: prepare filter :)
 						concat(
