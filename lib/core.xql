@@ -80,7 +80,7 @@ declare function core:typegen($frame,$type,$name) {
 
 declare function core:item() {
 	(: TODO check a return type :)
-	"item()"
+	"core:item()"
 };
 
 declare function core:item($frame,$name) {
