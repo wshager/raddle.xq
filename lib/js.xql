@@ -124,7 +124,7 @@ declare function core:op($op,$b){
 };
 
 declare function core:op($op,$a,$b){
-	concat($a,$core:operator-map($op),$b)
+	concat($a," ",$core:operator-map($op)," ",$b)
 };
 
 declare function core:filter($a,$b){
