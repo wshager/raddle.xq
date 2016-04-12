@@ -69,7 +69,7 @@ declare function core:process-args($frame,$args){
 	if($frame instance of xs:string) then
 		"&#07;processArgs_2($frame,$args)"
 	else
-		let $args :=
+		let $args2 :=
 			a:fold-left-at($args,[],function($pre,$arg,$at){
 				if($arg instance of array(item()?)) then
 					let $name := $frame("$caller")
@@ -112,13 +112,10 @@ declare function core:process-args($frame,$args){
 					array:append($pre,core:serialize($arg,$frame))
 			})
 		let $n :=
-		a:for-each($args, function($_){
-				if($_ instance of xs:string) then
-					()
-				else
-					try { console:log($_) } catch * { () }
+		a:for-each-at($args2, function($_,$i){
+			try { console:log(($args($i)," -> ",$_)) } catch * { () }
 		})
-		return $args
+		return $args2
 };
 
 declare function core:op($op,$b){
@@ -148,16 +145,16 @@ declare function core:typegen_2($type,$keytype,$valtype) {
 
 declare function core:typegen_2($type,$seq) {
 	if($type eq "map") then
-			core:map($seq)
+		core:map($seq)
 	else
-			()
+		()
 };
 
 declare function core:typegen_2($type,$keytype,$valtype,$body) {
 	if($type eq "map") then
-			core:map($keytype,$valtype,$body)
+		core:map($keytype,$valtype,$body)
 	else
-			core:function($keytype,$valtype,$body)
+		core:function($keytype,$valtype,$body)
 };
 
 declare function core:map($keytype,$valtype,$seq) {
@@ -197,6 +194,8 @@ declare function core:transpile($tree,$frame,$top,$ret,$at){
 			else
 				$val
 		return core:transpile(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false()) then if($top) then ";&#10;&#13;" else "," else "",$val),$at + 1)
+	else if($at = 1) then
+		"nil_0()"
 	else
 		$ret
 };
@@ -233,8 +232,8 @@ declare function core:process-value($value,$frame){
 						if($is-type) then
 							(: call typegen/constructor :)
 (:							let $n := console:log($args) return:)
-									let $a := $core:typemap($local)
-									let $f := concat("core:typegen",if($a > 0) then concat("_",$a) else "")
+							let $a := $core:typemap($local)
+							let $f := concat("core:typegen",if($a > 0) then concat("_",$a) else "")
 							return function-lookup(QName("http://raddle.org/javascript", $f),$s)
 						else if($is-op) then
 							function-lookup(QName("http://raddle.org/javascript", "core:op"),$s)
@@ -273,7 +272,7 @@ declare function core:process-value($value,$frame){
 };
 
 declare %private function core:is-current-module($frame,$name){
-	()
+	"&#07;isCurrentModule_2($frame,$name)"
 };
 
 declare function core:concat($a,$b){
@@ -389,7 +388,7 @@ declare function core:typegen($type) {
 };
 
 declare function core:filter-at($a,$fn) {
-	""
+	"filterAt_2(" || $a || "," || $fn || ")"
 };
 
 declare function core:if($a,$b,$c){
@@ -414,7 +413,7 @@ declare function core:typegen($type,$frame,$name,$val){
 
 declare function core:typegen($type,$frame,$name,$val,$suffix) {
 	let $name := core:clip($name)
-	let $type := $core:typemap($type)
+	let $type := core:cap($type)
 	return
 		if($val) then
 			"let $" || $name || " = new " || $type || "(" || $val || ")"
