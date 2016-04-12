@@ -14,8 +14,8 @@ declare function local:serialize($dict){
 };
 
 declare function local:normalize($query,$params) {
-    let $strings := analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*
-    return xqc:normalize-query(string-join(for-each(1 to count($strings),function($i){
+	let $strings := analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*
+	return xqc:normalize-query(string-join(for-each(1 to count($strings),function($i){
 		if(name($strings[$i]) eq "match") then
 			"$%" || $i
 		else
@@ -29,10 +29,14 @@ let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [
 let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/lib/core.xql"), "utf-8")
 (:let $query := 'core:module($,test,test,test),core:define($,test:add,(),(core:integer($,x),core:integer($,y)),core:integer(),(core:integer($,z,$y),n:add($x,$z)))':)
 
-(:let $query := 'declare function core:define($frame,$name,$desc,$args,$type,$body) {:)
-(:	a:fold-left-at($args,map{},function($pre,$_,$i){:)
-(:		let $x := $frame return $_($x)($pre,(),$i):)
-(:	}):)
+(:let $query := 'declare function core:import($frame,$prefix,$uri,$location){:)
+(:	let $import :=:)
+(:		if(1) then:)
+(:			2:)
+(:		else:)
+(:			let $src := 3:)
+(:			return $src:)
+(:	return $import:)
 (:};':)
 
 

@@ -8,5 +8,6 @@ let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$transpile":="
 
 let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/core.rdl"), "utf-8")
 
-let $module := raddle:exec($query,$params)
-return $module
+(:return raddle:exec($query,$params):)
+
+return xmldb:store("/db/apps/raddle.xq/js","core.js",raddle:exec($query,$params),"application/javascript")
