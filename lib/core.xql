@@ -153,8 +153,9 @@ declare function core:process-args($frame,$args){
 	a:for-each-at($args,function($arg,$at){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
-			let $is-params := ($frame("$caller") eq "core:define#6" and $at = 4) or ($frame("$caller") eq "core:function#3" and $at = 1)
-			let $is-body := $frame("$caller") eq "core:define#6" and $at = 6
+			let $name := $frame("$caller")
+			let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
+			let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
 			return
 				if($is-params or (core:is-fn-seq($arg) = false() and $is-body = false())) then
 					a:for-each($arg,function($_){
