@@ -111,10 +111,10 @@ declare function core:process-args($frame,$args){
 				else
 					array:append($pre,core:serialize($arg,$frame))
 			})
-		let $n :=
-		a:for-each-at($args2, function($_,$i){
-			try { console:log(($args($i)," -> ",$_)) } catch * { () }
-		})
+(:		let $n :=:)
+(:		a:for-each-at($args2, function($_,$i){:)
+(:			try { console:log(($args($i)," -> ",$_)) } catch * { () }:)
+(:		}):)
 		return $args2
 };
 
@@ -139,18 +139,18 @@ declare function core:array($seq) {
 	string-join(array:flatten($seq),",")
 };
 
-declare function core:typegen_2($type,$keytype,$valtype) {
+declare function core:typegen2($type,$keytype,$valtype) {
 	core:cap($type)
 };
 
-declare function core:typegen_2($type,$seq) {
+declare function core:typegen2($type,$seq) {
 	if($type eq "map") then
 		core:map($seq)
 	else
 		()
 };
 
-declare function core:typegen_2($type,$keytype,$valtype,$body) {
+declare function core:typegen2($type,$keytype,$valtype,$body) {
 	if($type eq "map") then
 		core:map($keytype,$valtype,$body)
 	else
@@ -162,7 +162,7 @@ declare function core:map($keytype,$valtype,$seq) {
 };
 
 declare function core:map($seq) {
-	concat("{",a:fold-left-at($seq,"",function($pre,$cur,$at){
+	concat("&#07;{",a:fold-left-at($seq,"",function($pre,$cur,$at){
 		concat($pre,if($at mod 2 = 1) then concat(if($at>1) then "," else "",$cur,":",$seq($at+1)) else "")
 	}),"}")
 };
@@ -180,15 +180,16 @@ declare function core:transpile($tree,$frame,$top,$ret,$at){
 	(: TODO cleanup into process-args :)
 	if(array:size($tree) > 0) then
 		let $frame := map:put($frame,"$at",$at)
-		let $val := core:process-value(array:head($tree),$frame)
+		let $head := array:head($tree)
+		let $val := core:process-value($head,$frame)
 		let $is-seq := $val instance of array(item()?)
 		let $val :=
 			if($is-seq) then
 				if($top) then
 					(: assume this is a let-return seq :)
-					a:fold-left-at($val,"",function($pre,$cur,$at){
-						concat($pre,if($at>1) then ";&#10;&#13;" else "",if($at < array:size($val)) then "" else "return ",$cur)
-					})
+					concat("(",a:fold-left-at($val,"",function($pre,$cur,$at){
+						concat($pre,if($at>1) then ",&#10;&#13;" else "",$cur)
+					}),")")
 				else
 					core:serialize($val,$frame)
 			else
@@ -233,7 +234,7 @@ declare function core:process-value($value,$frame){
 							(: call typegen/constructor :)
 (:							let $n := console:log($args) return:)
 							let $a := $core:typemap($local)
-							let $f := concat("core:typegen",if($a > 0) then concat("_",$a) else "")
+							let $f := concat("core:typegen",if($a > 0) then $a else "")
 							return function-lookup(QName("http://raddle.org/javascript", $f),$s)
 						else if($is-op) then
 							function-lookup(QName("http://raddle.org/javascript", "core:op"),$s)
@@ -366,7 +367,7 @@ declare function core:define($frame,$name,$def,$args,$type,$body) {
 
 declare function core:define($frame,$name,$def,$args,$type,$body,$private) {
 	let $ret := string-join(array:flatten($args),",")
-	return concat(if($private) then "" else "export ","function ",core:cc(tokenize(core:clip($name),":")[last()]),"_",array:size($args),"(",$ret,") /*",$type,"*/ {&#10;&#13;",replace($body,"&#07;",""),"&#10;&#13;}")
+	return concat(if($private) then "" else "export ","function ",core:cc(tokenize(core:clip($name),":")[last()]),"_",array:size($args),"(",$ret,") /*",$type,"*/ {&#10;&#13;return ",replace($body,"&#07;",""),";&#10;&#13;}")
 };
 
 declare function core:describe($frame,$name,$def,$args,$type){
@@ -375,7 +376,7 @@ declare function core:describe($frame,$name,$def,$args,$type){
 
 declare function core:function($args,$type,$body) {
 	let $args := string-join(array:flatten($args),",") return
-	concat("function(",$args,") /*",$type,"*/ {&#10;&#13;",$body,"&#10;&#13;}")
+	concat("function(",$args,") /*",$type,"*/ {&#10;&#13;return ",$body,";&#10;&#13;}")
 };
 
 declare function core:cap($str){
@@ -392,7 +393,7 @@ declare function core:filter-at($a,$fn) {
 };
 
 declare function core:if($a,$b,$c){
-	concat("if(",$a,") { return ",$b,"; } else {return ",$c,";}")
+	concat("&#07;(",$a," ? ",$b," : ",$c,")")
 };
 
 declare function core:typegen($type,$val) {
@@ -404,7 +405,7 @@ declare function core:clip($name){
 };
 
 declare function core:typegen($type,$frame,$name){
-	"$" || replace(core:clip($name),"^\$","")
+	"$" || replace(core:clip($name),"\$","")
 };
 
 declare function core:typegen($type,$frame,$name,$val){
@@ -416,7 +417,7 @@ declare function core:typegen($type,$frame,$name,$val,$suffix) {
 	let $type := core:cap($type)
 	return
 		if($val) then
-			"let $" || $name || " = new " || $type || "(" || $val || ")"
+			"$" || $name || " = new " || $type || "(" || $val || ")"
 		else
 			$name || " /* " || $type || $suffix || " */"
 };
