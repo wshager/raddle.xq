@@ -46,7 +46,7 @@ declare function core:xq-version($frame,$version){
 };
 
 declare function core:instance-of($a,$b) {
-	$a || " instance of " || $b
+	concat("(",$a," instanceof ",$b,")")
 };
 
 declare %private function core:is-fn-seq($value) {
