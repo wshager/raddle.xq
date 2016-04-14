@@ -194,7 +194,7 @@ declare function core:transpile($tree,$frame,$top,$ret,$at){
 					core:serialize($val,$frame)
 			else
 				$val
-		return core:transpile(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false()) then if($top) then ";&#10;&#13;" else "," else "",$val),$at + 1)
+		return core:transpile(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false()) then if($top) then "&#10;&#13;" else "," else "",$val),$at + 1)
 	else if($at = 1) then
 		"nil_0()"
 	else
@@ -337,11 +337,17 @@ declare function core:module($frame,$prefix,$ns,$desc) {
 };
 
 declare function core:import($frame,$prefix,$ns) {
-	concat("import * as ", core:clip($prefix), " from ", $ns)
+	if($frame instance of xs:string) then
+		"import_3($frame,$prefix,$ns)"
+	else
+		concat("import * as ", core:clip($prefix), " from ", $ns)
 };
 
 declare function core:import($frame,$prefix,$ns,$loc) {
-	concat("import * as ", core:clip($prefix), " from ", $loc, "")
+	if($frame instance of xs:string) then
+		"import_4($frame,$prefix,$ns)"
+	else
+		concat("import * as ", core:clip($prefix), " from ", $loc, "")
 };
 
 declare function core:function-name($name,$arity,$default-prefix){
