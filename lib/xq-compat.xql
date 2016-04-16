@@ -466,8 +466,21 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 		xqc:comment($rest,$ret,$lastseen)
 	else if($no eq 21.06) then
 		xqc:anon($next,tail($rest),concat($ret,xqc:op-str($no),"(("),xqc:appd($lastseen,$no))
-	else if($no eq 21.07) then
-		xqc:body($rest,concat($ret,xqc:op-str($no),"("),xqc:appd($lastseen,$no))
+	else if(round($no) eq 21) then
+		let $ret := concat($ret,xqc:op-str($no),"(")
+		(: for element etc, check if followed by qname :)
+		let $qn := if($next ne "=#20#06=") then $next else ()
+		let $rest :=
+			if(exists($qn)) then
+				tail($rest)
+			else
+				$rest
+		let $ret :=
+			if(exists($qn)) then
+				concat($ret,$next,",")
+			else
+				$ret
+		return xqc:body($rest,$ret,xqc:appd($lastseen,$no))
 	else
 		let $old := $lastseen
 		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?\p{N}+)|position$")
@@ -505,9 +518,19 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				","
 			else if($no eq 20.07) then
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
+				let $closes := subsequence($lastseen,$lastindex,count($lastseen))[xqc:eq(.,(2.08,2.11))]
 				(: add one extra closed paren by consing 2.11 :)
-				let $ret := string-join((subsequence($lastseen,$lastindex,count($lastseen))[xqc:eq(.,(2.08,2.11))], 2.11) ! ")")
-				return concat($ret,if($lastseen[$lastindex - 1] = (21.06,21.07)) then ")" else "")
+				let $closes := ($closes,2.11)
+				(: close the opening type UNLESS its another opener :)
+				return concat(
+					string-join($closes ! ")"),
+					if($next eq "=#20#06=") then
+						","
+					else if(round($lastseen[$lastindex - 1]) eq 21) then
+						")"
+					else
+						""
+				)
 			else if($no = (2.07,2.08,2.10)) then
 (:				concat(if($close>0) then string-join((1 to $close) ! ")") else "",","):)
 				concat(
@@ -551,7 +574,9 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				return xqc:appd($lastseen,26)
 			else if($no = 20.07) then
 				(: eat up until 20.06 :)
-				subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 2)
+				let $lastseen := subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
+				(: remove opening type UNLESS next is another opener :)
+				return if(round($lastseen[last()]) eq 21 and $next ne "=#20#06=") then xqc:pop($lastseen) else $lastseen
 			else if(xqc:eq($no, (2.07,2.08,2.10))) then
 				(: if 'then' expect an opener and remove it :)
 				let $lastseen :=
