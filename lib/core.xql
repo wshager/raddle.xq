@@ -8,11 +8,11 @@ import module namespace n="http://raddle.org/native-xq" at "n.xql";
 import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace console="http://exist-db.org/xquery/console";
 
-declare function core:elem($frame,$name,$content){
+declare function core:element($frame,$name,$content){
 	n:element($name,$content)
 };
 
-declare function core:attr($frame,$name,$content){
+declare function core:attribute($frame,$name,$content){
 	n:attribute($name,$content)
 };
 
@@ -47,13 +47,6 @@ declare function core:function($args,$type,$body) {
 	n:bind($body,$args,$type)
 };
 
-declare function core:typecheck($type,$val){
-	if(util:eval(concat("$val instance of ",$type))) then
-		console:log(($val,$type))
-	else
-		console:log("Not of correct type")
-};
-
 declare function core:get-name-suffix($name){
 	let $cp := string-to-codepoints($name)
 	return
@@ -63,14 +56,14 @@ declare function core:get-name-suffix($name){
 			($name,"")
 };
 
-declare function core:typegen($frame,$type,$name,$val) {
+declare function core:typegen($type,$frame,$name,$val) {
 (:	function($frame) {:)
 		(: _check($val,$type);:)
 		map:put($frame,$name,$val)
 (:	}:)
 };
 
-declare function core:typegen($frame,$type,$name) {
+declare function core:typegen($type,$frame,$name) {
 	function($frame,$val,$i) {
 		(: add type to map just for posterity :)
 		let $val := if(empty($val)) then $type else $val
@@ -78,42 +71,49 @@ declare function core:typegen($frame,$type,$name) {
 	}
 };
 
-declare function core:item() {
-	(: TODO check a return type :)
-	"core:item()"
-};
-
-declare function core:item($frame,$name) {
-	core:typegen($frame,"item()",$name)
-};
-
-declare function core:item($frame,$name,$val) {
-	core:typegen($frame,"item()",$name,$val)
-};
-
-declare function core:integer() {
-	(: TODO check a return type :)
-	"xs:integer"
-};
-
-declare function core:integer($frame,$name) {
-	core:typegen($frame,"xs:integer",$name)
-};
-
-declare function core:integer($frame,$name,$val) {
-	core:typegen($frame,"xs:integer",$name,$val)
-};
-
-declare function core:string() {
-	"xs:string"
-};
-
-declare function core:string($frame,$name) {
-	core:typegen($frame,"xs:string",$name)
-};
-
-declare function core:string($frame,$name,$val) {
-	core:typegen($frame,"xs:string",$name,$val)
+declare function core:eval($value){
+	(: if sequence, call n:seq, else call n:function :)
+	(: pass the context through sequence with function calls :)
+	(: global context consists of flags, functions, variables, prefix mapping, :)
+	(: frame context is used to store params and local variables :)
+	if($value instance of array(item()?)) then
+		n:quote-seq($value)
+	else if($value instance of map(xs:string,item()?)) then
+		let $name := $value("name")
+		let $args := $value("args")
+		let $s := array:size($args)
+		return
+			if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
+				let $local := replace($name,"^core:","")
+				let $is-type := $local = map:keys($n:typemap)
+				let $args :=
+					if($is-type) then
+						array:insert-before($args,1,$local)
+					else
+						$args
+				let $name :=
+					if($is-type) then
+						(: call typegen/constructor :)
+						let $a := $core:typemap($local)
+						return concat("core:typegen",if($a > 0) then $a else "","#",$s + 1)
+					else
+						concat($name,"#",$s)
+				return n:quote($frame,$name,$args)
+			else
+				let $name :=
+					if($name eq "") then
+						concat("n:seq#",$s)
+					else
+						concat($name,"#",$s)
+				return n:quote($frame,$name,$args)
+	else
+(:		let $value := :)
+(:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
+(:				replace($value,"^_","\$_" || $frame("$at")):)
+(:			else:)
+(:				$value:)
+(:		return:)
+		n:quote($value)
 };
 
 declare function core:apply($frame,$name,$args){
