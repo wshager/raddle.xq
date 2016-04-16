@@ -5,6 +5,16 @@ import module namespace core="http://raddle.org/core" at "core.xql";
 import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 
+declare variable $n:typemap := map {
+	"integer": 0,
+	"string": 0,
+	"item": 0,
+	"anyURI": 0,
+	"map": 2,
+	"function": 2,
+	"array": 1
+};
+
 declare function n:import($location){
 	let $module := inspect:inspect-module(xs:anyURI($location))
 	let $fns := inspect:module-functions(xs:anyURI($location))
@@ -40,6 +50,9 @@ declare function n:import($location){
 		}
 };
 
+declare function n:eval($value) {
+	core:eval($value)
+};
 
 declare function n:bind($fn,$args,$type) {
 	(: frame is bound late, exported function has to be called with frame again :)
@@ -52,61 +65,37 @@ declare function n:bind($fn,$args,$type) {
 	}
 };
 
-declare function n:eval($value){
-	(: if sequence, call n:seq, else call n:function :)
-	(: pass the context through sequence with function calls :)
-	(: global context consists of flags, functions, variables, prefix mapping, :)
-	(: frame context is used to store params and local variables :)
-	if($value instance of array(item()?)) then
-		let $function := function($frame) {
-			a:fold-left($value,$frame,function($pre,$cur){
-				n:eval($cur)($pre)
-			})
-		}
-		return $function
-	else if($value instance of map(xs:string,item()?)) then
-		let $args := $value("args")
-		let $name :=
-			if($value("name") eq "") then
-				"n:seq#" || array:size($args)
-			else
-				$value("name") || "#" || array:size($args)
-		(: TODO process args :)
-		(: args may contain values, variables, dots or function references :)
-		(: a dot contains the (query) context, i.e. the return value of the previous function, and is stored in index 0 (zero) of the stack context :)
-		(: if exec is called from raddle (i.e. TOP) there's frame context, but the global context is passed instead :)
-		(: else a wrapper function is returned, that applies the frame context to the function as its arguments :)
-		(: the function should receive a reference to the real function by way of closure :)
-		(: TODO the frame is an array, variable and parameter names are dereferenced first (i.e. referenced by their order) :)
-		(: the frame is a mutable (map) and is passed down the entire program. it relies on the purity of functions for immutability :)
-		return function($frame){
-			core:apply($frame,$name,$args)
-		}
-	else
-(:		let $value := :)
-(:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
-(:				replace($value,"^_","\$_" || $frame("$at")):)
-(:			else:)
-(:				$value:)
-(:		return:)
-		function($frame){
-			$value
-		}
+declare function n:quote($value) {
+	function($frame){
+		$value
+	}
+};
+
+declare function n:quote($frame,$name,$args) {
+	function($frame){
+		core:apply($frame,$name,$args)
+	}
+};
+
+declare function n:quote-seq($value){
+	function($frame) {
+		n:seq($value,$frame)
+	}
 };
 
 declare function n:if($test,$true,$false) {
-		if($test) then
-				$true
-		else
-				$false
+	if($test) then
+		$true
+	else
+		$false
 };
 
 declare function n:eq($a,$b) {
-		$a eq $b
+	$a eq $b
 };
 
 declare function n:select($a,$b) {
-		util:eval("$a/" || $b)
+	util:eval("$a/" || $b)
 };
 
 declare function n:add($a as xs:integer,$b as xs:integer) {
@@ -118,33 +107,33 @@ declare function n:subtract($a,$b) {
 };
 
 declare function n:map() {
-		map {}
+	map {}
 };
 
 declare function n:array() {
-		[]
+	[]
 };
 
 declare function n:element($name,$content) {
-		element {$name} {
-				$content
-		}
+	element {$name} {
+		$content
+	}
 };
 
 declare function n:attribute($name,$content) {
-		attribute {$name} {
-				$content
-		}
+	attribute {$name} {
+		$content
+	}
 };
 
 declare function n:text($content) {
-		text {
-				$content
-		}
+	text {
+		$content
+	}
 };
 
-declare function n:seq($value,$context) {
-	a:fold-left($value,$context,function($pre,$cur){
+declare function n:seq($value,$frame) {
+	a:fold-left($value,$frame,function($pre,$cur){
 		n:eval($cur)($pre)
 	})
 };
