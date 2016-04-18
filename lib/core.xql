@@ -56,6 +56,43 @@ declare function core:get-name-suffix($name){
 			($name,"")
 };
 
+
+declare function core:typegen1($type,$valtype) {
+	util:eval(concat($type,"(",$valtype,")"))
+};
+
+declare function core:typegen1($type,$seq) {
+	if($type eq "array") then
+		n:array($seq)
+	else
+		()
+};
+
+declare function core:typegen2($type,$keytype,$valtype,$body) {
+	if($type eq "map") then
+		util:eval(concat("map {",$body,"}"))
+	else
+		core:function($keytype,$valtype,$body)
+};
+
+declare function core:typegen2($type,$keytype,$valtype) {
+	util:eval(concat($type,"(",$valtype,")"))
+};
+
+declare function core:typegen2($type,$body) {
+	if($type eq "map") then
+		util:eval(concat("map {",$body,"}"))
+	else
+		()
+};
+
+declare function core:typegen2($type,$keytype,$valtype,$body) {
+	if($type eq "map") then
+		util:eval(concat("map {",$body,"}"))
+	else
+		core:function($keytype,$valtype,$body)
+};
+
 declare function core:typegen($type,$frame,$name,$val) {
 (:	function($frame) {:)
 		(: _check($val,$type);:)
@@ -70,6 +107,15 @@ declare function core:typegen($type,$frame,$name) {
 		return map:put($frame,if($name eq "") then string($i) else $name,$val)
 	}
 };
+
+
+(:declare function core:op($op,$a) {:)
+(:	core:op($op,"",$a):)
+(:};:)
+
+(:declare function core:op($op,$a,$b) {:)
+(:	util:eval(concat($a," ",$n:operator-map($op)," ",$b)):)
+(:};:)
 
 declare function core:eval($value){
 	(: if sequence, call n:seq, else call n:function :)
@@ -86,26 +132,31 @@ declare function core:eval($value){
 			if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
 				let $local := replace($name,"^core:","")
 				let $is-type := $local = map:keys($n:typemap)
+				let $is-op := map:contains($n:operator-map,$local)
 				let $args :=
-					if($is-type) then
+					if($is-type or $is-op) then
 						array:insert-before($args,1,$local)
 					else
 						$args
 				let $name :=
 					if($is-type) then
 						(: call typegen/constructor :)
-						let $a := $core:typemap($local)
+						let $a := $n:typemap($local)
 						return concat("core:typegen",if($a > 0) then $a else "","#",$s + 1)
+(:					else if($is-op) then:)
+(:						(: call op :):)
+(:						let $a := $n:operator-map($local):)
+(:						return concat("core:op#",$s + 1):)
 					else
 						concat($name,"#",$s)
-				return n:quote($frame,$name,$args)
+				return n:quote($name,$args)
 			else
 				let $name :=
 					if($name eq "") then
 						concat("n:seq#",$s)
 					else
 						concat($name,"#",$s)
-				return n:quote($frame,$name,$args)
+				return n:quote($name,$args)
 	else
 (:		let $value := :)
 (:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
@@ -153,9 +204,8 @@ declare function core:process-args($frame,$args){
 	a:for-each-at($args,function($arg,$at){
 		if($arg instance of array(item()?)) then
 			(: check: composition or sequence? :)
-			let $name := $frame("$caller")
-			let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
-			let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
+			let $is-params := ($frame("$caller") eq "core:define#6" and $at = 4) or ($frame("$caller") eq "core:function#3" and $at = 1)
+			let $is-body := $frame("$caller") eq "core:define#6" and $at = 6
 			return
 				if($is-params or (core:is-fn-seq($arg) = false() and $is-body = false())) then
 					a:for-each($arg,function($_){
@@ -165,7 +215,8 @@ declare function core:process-args($frame,$args){
 				else
 					n:eval($arg)
 		else if($arg instance of map(xs:string,item()?)) then
-			n:eval($arg)
+			(: eval nested calls !:)
+			n:eval($arg)($frame)
 		else if($arg eq ".") then
 			$frame("0")
 		else if($arg eq "$") then
