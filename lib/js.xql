@@ -13,7 +13,8 @@ declare variable $core:typemap := map {
 	"item": 0,
 	"anyURI": 0,
 	"map": 2,
-	"function": 2
+	"function": 2,
+	"array": 1
 };
 
 declare variable $core:operator-map := map {
@@ -75,9 +76,10 @@ declare function core:process-args($frame,$args){
 					let $name := $frame("$caller")
 					let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
 					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
+					let $is-fn-seq := core:is-fn-seq($arg)
 					return
 						array:append($pre,
-							if($is-params or (core:is-fn-seq($arg) = false() and $is-body = false())) then
+							if($is-params or ($is-fn-seq = false() and $is-body = false())) then
 								a:for-each-at($arg,function($_,$at){
 									if($_ instance of array(item()?)) then
 										core:transpile($_, $frame)
@@ -85,7 +87,8 @@ declare function core:process-args($frame,$args){
 										core:process-value($_,map:put($frame,"$at",$at))
 								})
 							else
-								core:transpile($arg, $frame, $is-body and core:is-fn-seq($arg))
+								let $ret := core:transpile($arg, $frame, $is-body and $is-fn-seq)
+								return if($is-fn-seq) then concat("(",$ret,")") else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
 					if($arg("name") eq "" and array:size($pre) > 1) then
@@ -123,7 +126,7 @@ declare function core:op($op,$b){
 };
 
 declare function core:op($op,$a,$b){
-	concat($a," ",$core:operator-map($op)," ",$b)
+	concat("(",$a," ",$core:operator-map($op)," ",$b,")")
 };
 
 declare function core:filter($a,$b){
@@ -136,25 +139,7 @@ declare function core:geq($a,$b) {
 };
 
 declare function core:array($seq) {
-	string-join(array:flatten($seq),",")
-};
-
-declare function core:typegen2($type,$keytype,$valtype) {
-	core:cap($type)
-};
-
-declare function core:typegen2($type,$seq) {
-	if($type eq "map") then
-		core:map($seq)
-	else
-		()
-};
-
-declare function core:typegen2($type,$keytype,$valtype,$body) {
-	if($type eq "map") then
-		core:map($keytype,$valtype,$body)
-	else
-		core:function($keytype,$valtype,$body)
+	concat("[",string-join(array:flatten($seq),","),"]")
 };
 
 declare function core:map($keytype,$valtype,$seq) {
@@ -194,8 +179,7 @@ declare function core:transpile($tree,$frame,$top,$ret,$at){
 					core:serialize($val,$frame)
 			else
 				$val
-		let $empty := $head instance of map(xs:string,item()?) and $head("name") = ("core:xq-version","core:module")
-		return core:transpile(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false() and $empty eq false()) then if($top) then "&#10;&#13;" else "," else "",$val),$at + 1)
+		return core:transpile(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false()) then if($top) then "&#10;&#13;" else "," else "",$val),$at + 1)
 	else if($at = 1) then
 		"nil_0()"
 	else
@@ -228,27 +212,27 @@ declare function core:hoist($tree){
 
 declare function core:process-value($value,$frame){
 		if($value instance of map(xs:string,item()?)) then
+		    let $name := $value("name")
 			let $args := $value("args")
 			let $s := array:size($args)
-			let $name := $value("name")
 			return
 				if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
 					let $local := replace($name,"^core:","")
 					let $is-type := $local = map:keys($core:typemap)
 					let $is-op := map:contains($core:operator-map,$local)
 					let $s := if($is-type or $is-op) then $s + 1 else $s
-					let $is-fn := ($local eq "define" and $s eq 6) or ($local eq "function" and $s eq 4)
+					let $is-fn := ($local = ("define","define-private") and $s eq 6) or ($local eq "function" and $s eq 4)
 					let $frame := map:put($frame,"$caller",concat($name,"#",$s))
 					let $hoisted :=
 						if($is-fn) then
-							let $i := if($local eq "define") then 6 else 3
+							let $i := if($local = ("define","define-private")) then 6 else 3
 							return core:hoist($args($i))
 						else
 							()
 					let $args := core:process-args($frame,$args)
 					let $hoisted :=
 						if($is-fn) then
-							let $params := array:flatten($args(if($local eq "define") then 4 else 1))
+							let $params := array:flatten($args(if($local = ("define","define-private")) then 4 else 1))
 							return
 								if(exists($hoisted) and exists($params)) then
 									distinct-values($hoisted[not(.=$params)])
@@ -257,8 +241,8 @@ declare function core:process-value($value,$frame){
 						else
 							()
 					let $args :=
-						if($local = ("define","function")) then
-							let $i := if($local eq "define") then 6 else 3
+						if($local = ("define","define-private","function")) then
+							let $i := if($local = ("define","define-private")) then 6 else 3
 							let $body :=
 								if(exists($hoisted)) then
 									concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$args($i))
@@ -296,7 +280,6 @@ declare function core:process-value($value,$frame){
 							function-lookup(QName("http://raddle.org/javascript", "core:op"),$s)
 						else
 							function-lookup(QName("http://raddle.org/javascript", $name),$s)
-					let $n := if(empty($fn)) then console:log(($name,$s)) else ()
 					return apply($fn,$args)
 				else if($name eq "") then
 					core:process-args(map:put($frame,"$caller",""),$args)
@@ -335,14 +318,17 @@ declare %private function core:is-current-module($frame,$name){
 };
 
 declare function core:concat($a,$b){
-	$a || " + " || $b
+	concat("(",$a," + ",$b,")")
 };
 
 declare function core:convert($string){
 	if(matches($string,"&#07;")) then
 		replace($string,"&#07;","")
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
-		core:cc(replace($string,"#","_"))
+		let $parts := tokenize(core:cc(replace($string,"#","_")),":")
+		return if(count($parts) > 1) then
+		    concat(replace($parts[1],"^\$",""),".",$parts[2])
+		else $parts[1]
 	else if(matches($string,"^(&quot;[^&quot;]*&quot;)$")) then
 		$string
 	else if(map:contains($core:auto-converted,$string)) then
@@ -448,16 +434,53 @@ declare function core:cap($str){
 	return codepoints-to-string((string-to-codepoints(upper-case(codepoints-to-string(head($cp)))),tail($cp)))
 };
 
-declare function core:typegen($type) {
-	core:typegen($type,())
-};
-
 declare function core:filter-at($a,$fn) {
 	"filterAt_2(" || $a || "," || $fn || ")"
 };
 
 declare function core:if($a,$b,$c){
 	concat("&#07;(",$a," ? ",$b," : ",$c,")")
+};
+
+
+declare function core:typegen1($type,$valtype) {
+	core:cap($type)
+};
+
+declare function core:typegen1($type,$seq) {
+	if($type eq "array") then
+		core:array($seq)
+	else
+		()
+};
+
+declare function core:typegen2($type,$keytype,$valtype,$body) {
+	if($type eq "map") then
+		core:map($keytype,$valtype,$body)
+	else
+		core:function($keytype,$valtype,$body)
+};
+
+declare function core:typegen2($type,$keytype,$valtype) {
+	core:cap($type)
+};
+
+declare function core:typegen2($type,$seq) {
+	if($type eq "map") then
+		core:map($seq)
+	else
+		()
+};
+
+declare function core:typegen2($type,$keytype,$valtype,$body) {
+	if($type eq "map") then
+		core:map($keytype,$valtype,$body)
+	else
+		core:function($keytype,$valtype,$body)
+};
+
+declare function core:typegen($type) {
+	core:typegen($type,())
 };
 
 declare function core:typegen($type,$val) {
