@@ -4,6 +4,7 @@ module namespace n="http://raddle.org/native-xq";
 import module namespace core="http://raddle.org/core" at "core.xql";
 import module namespace a="http://raddle.org/array-util" at "array-util.xql";
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
+import module namespace console="http://exist-db.org/xquery/console";
 
 declare variable $n:typemap := map {
 	"integer": 0,
@@ -13,6 +14,23 @@ declare variable $n:typemap := map {
 	"map": 2,
 	"function": 2,
 	"array": 1
+};
+
+declare variable $n:operator-map := map {
+	"or": "or",
+	"and": "and",
+	"eq": "eq",
+	"ne": "ne",
+	"lt": "lt",
+	"le": "le",
+	"gt": "gt",
+	"ge": "ge",
+	"add": "+",
+	"subtract": "-",
+	"multiply": "*",
+	"div": "div",
+	"idiv": "idiv",
+	"mod": "mod"
 };
 
 declare function n:import($location){
@@ -71,7 +89,7 @@ declare function n:quote($value) {
 	}
 };
 
-declare function n:quote($frame,$name,$args) {
+declare function n:quote($name,$args) {
 	function($frame){
 		core:apply($frame,$name,$args)
 	}
@@ -79,8 +97,14 @@ declare function n:quote($frame,$name,$args) {
 
 declare function n:quote-seq($value){
 	function($frame) {
-		n:seq($value,$frame)
+		a:fold-left($value,$frame,function($pre,$cur){
+			n:eval($cur)($pre)
+		})
 	}
+};
+
+declare function n:array($seq) {
+	[$seq]
 };
 
 declare function n:if($test,$true,$false) {
@@ -132,8 +156,8 @@ declare function n:text($content) {
 	}
 };
 
-declare function n:seq($value,$frame) {
-	a:fold-left($value,$frame,function($pre,$cur){
+declare function n:seq($value,$context) {
+	a:fold-left($value,$context,function($pre,$cur){
 		n:eval($cur)($pre)
 	})
 };
