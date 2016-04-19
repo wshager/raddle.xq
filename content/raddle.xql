@@ -122,8 +122,7 @@ declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 declare function rdl:append-prop-or-value($string,$operator,$strings,$ret) {
 	if(matches($operator, $xqc:operator-regexp || "+")) then
 		if(array:size($ret)>0) then
-(:			let $n := console:log($operator) return:)
-			xqc:operator-precedence(if(exists($string)) then rdl:value-from-strings($string,$strings) else	(),$operator,$ret)
+			xqc:operator-precedence(if(exists($string)) then rdl:value-from-strings($string,$strings) else (),$operator,$ret)
 		else
 			array:append($ret,map { "name" := xqc:unary-op($operator), "args" := [rdl:value-from-strings($string,$strings)], "suffix" := ""})
 	else
@@ -174,11 +173,7 @@ declare function rdl:import-module($name,$params){
 			inspect:inspect-module($location)
 		else
 			inspect:inspect-module-uri($uri)
-	return try {
-		util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location))
-	} catch * {
-		()
-	}
+	return n:try(util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location)),())
 };
 
 declare function rdl:stringify($a,$params){
@@ -190,10 +185,9 @@ declare function rdl:stringify($a,$params,$top){
 	return
 		a:fold-left-at($a,"",function($acc,$t,$i){
 			let $type :=
-				typeswitch($t)
-					case map(xs:string?,item()?) return 1
-					case array(item()) return 2
-					default return 0
+				if($t instance of map(xs:string?,item()?)) then 1
+				else if($t instance of array(item()?)) then 2
+				else 0
 			let $ret :=
 				if($type eq 1) then
 					concat($t("name"),"(",string-join(array:flatten(rdl:stringify($t("args"),$params,false())),","),")",if($t("suffix") instance of xs:string) then $t("suffix") else "")

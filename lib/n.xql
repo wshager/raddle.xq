@@ -33,6 +33,10 @@ declare variable $n:operator-map := map {
 	"mod": "mod"
 };
 
+declare function n:try($try,$catch) {
+    try { $try } catch * { $catch }
+};
+
 declare function n:import($location){
 	let $module := inspect:inspect-module(xs:anyURI($location))
 	let $fns := inspect:module-functions(xs:anyURI($location))
