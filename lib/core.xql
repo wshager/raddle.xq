@@ -108,15 +108,6 @@ declare function core:typegen($type,$frame,$name) {
 	}
 };
 
-
-(:declare function core:op($op,$a) {:)
-(:	core:op($op,"",$a):)
-(:};:)
-
-(:declare function core:op($op,$a,$b) {:)
-(:	util:eval(concat($a," ",$n:operator-map($op)," ",$b)):)
-(:};:)
-
 declare function core:eval($value){
 	(: if sequence, call n:seq, else call n:function :)
 	(: pass the context through sequence with function calls :)
@@ -143,10 +134,6 @@ declare function core:eval($value){
 						(: call typegen/constructor :)
 						let $a := $n:typemap($local)
 						return concat("core:typegen",if($a > 0) then $a else "","#",$s + 1)
-(:					else if($is-op) then:)
-(:						(: call op :):)
-(:						let $a := $n:operator-map($local):)
-(:						return concat("core:op#",$s + 1):)
 					else
 						concat($name,"#",$s)
 				return n:quote($name,$args)
@@ -158,12 +145,6 @@ declare function core:eval($value){
 						concat($name,"#",$s)
 				return n:quote($name,$args)
 	else
-(:		let $value := :)
-(:			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then:)
-(:				replace($value,"^_","\$_" || $frame("$at")):)
-(:			else:)
-(:				$value:)
-(:		return:)
 		n:quote($value)
 };
 
