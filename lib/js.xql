@@ -138,6 +138,11 @@ declare function core:geq($a,$b) {
 	concat("n.geq_2(",$a,",",$b,")")
 };
 
+declare function core:ggt($a,$b) {
+	(: TODO create a sequence-type general comp :)
+	concat("n.ggt_2(",$a,",",$b,")")
+};
+
 declare function core:array($seq) {
 	concat("[",string-join(array:flatten($seq),","),"]")
 };
@@ -212,7 +217,7 @@ declare function core:hoist($tree){
 
 declare function core:process-value($value,$frame){
 		if($value instance of map(xs:string,item()?)) then
-		    let $name := $value("name")
+			let $name := $value("name")
 			let $args := $value("args")
 			let $s := array:size($args)
 			return
@@ -280,6 +285,7 @@ declare function core:process-value($value,$frame){
 							function-lookup(QName("http://raddle.org/javascript", "core:op"),$s)
 						else
 							function-lookup(QName("http://raddle.org/javascript", $name),$s)
+					let $n := if(empty($fn)) then console:log(($name,"#",$s)) else ()
 					return apply($fn,$args)
 				else if($name eq "") then
 					core:process-args(map:put($frame,"$caller",""),$args)
@@ -318,7 +324,7 @@ declare %private function core:is-current-module($frame,$name){
 };
 
 declare function core:concat($a,$b){
-	concat("(",$a," + ",$b,")")
+	concat("&#07;n.concat_2(",$a,",",$b,")")
 };
 
 declare function core:convert($string){
@@ -327,7 +333,7 @@ declare function core:convert($string){
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#","_")),":")
 		return if(count($parts) > 1) then
-		    concat(replace($parts[1],"^\$",""),".",$parts[2])
+			concat(replace($parts[1],"^\$",""),".",$parts[2])
 		else $parts[1]
 	else if(matches($string,"^(&quot;[^&quot;]*&quot;)$")) then
 		$string
