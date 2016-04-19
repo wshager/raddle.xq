@@ -34,7 +34,7 @@ declare variable $rdl:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file
 
 
 declare function rdl:map-put($map,$key,$val){
-	map:new(($map,map {$key := $val}))
+	map:new(($map,map {$key : $val}))
 };
 
 declare function rdl:parse-strings($strings as element()*,$normalizer,$params) {
@@ -122,6 +122,7 @@ declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 declare function rdl:append-prop-or-value($string,$operator,$strings,$ret) {
 	if(matches($operator, $xqc:operator-regexp || "+")) then
 		if(array:size($ret)>0) then
+(:			let $n := console:log($operator) return:)
 			xqc:operator-precedence(if(exists($string)) then rdl:value-from-strings($string,$strings) else	(),$operator,$ret)
 		else
 			array:append($ret,map { "name" := xqc:unary-op($operator), "args" := [rdl:value-from-strings($string,$strings)], "suffix" := ""})
