@@ -837,7 +837,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 	return
 		if(matches($arg,"\p{L}+")) then
 			if($key eq 21.06) then
-				"(^|\s|,|\(|;)" || $arg || "([\s" || $xqc:ncname || ":]*\s*\([\$" || $xqc:ncname || ":#=\(\),\s]*\)\s?=#20#06=)"
+				"(^|\s|,|\(|;)" || $arg || "([\s" || $xqc:ncname || ":]*\s*\([\$" || $xqc:ncname || ":#=\(\),\s]*\)\s*=#20#06=)"
 			else if(round($key) eq 21) then
 				"(^|\s|,|\(|;)" || $arg || "([\s\$" || $xqc:ncname || ",:]*=#20#06)"
 			else if(round($key) eq 22) then
