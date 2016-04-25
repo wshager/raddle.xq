@@ -170,6 +170,7 @@ declare function core:transpile($tree,$frame,$top,$ret,$at){
 	if(array:size($tree) > 0) then
 		let $frame := map:put($frame,"$at",$at)
 		let $head := array:head($tree)
+		let $frame := if($head("name") eq "core:module") then map:put($frame,"$prefix",$head("args")(2)) else $frame
 		let $val := core:process-value($head,$frame,$top)
 		let $is-seq := $val instance of array(item()?)
 		let $val :=
@@ -311,7 +312,7 @@ declare function core:process-value($value,$frame,$top){
 						if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 								concat("&#07;",core:convert($name,$frame))
 							else
-								core:function-name($name,$s,"fn")
+								core:function-name($name,$s,$frame("$prefix"),"fn")
 (:						let $n := console:log($f):)
 						return concat($f,"(",$ret,")")
 		else
@@ -326,13 +327,12 @@ declare %private function core:is-current-module($frame,$name){
 };
 
 declare function core:convert($string,$frame){
-(:	let $n := console:log($frame("$prefix")) return:)
 	if(matches($string,"&#07;")) then
 		replace($string,"&#07;","")
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#","_")),":")
 		return
-			if(count($parts) > 1) then
+			if(count($parts) > 1 and $parts[1] ne $frame("$prefix")) then
 				concat("&#07;",replace($parts[1],"\$",""),".",$parts[2])
 			else
 				concat("&#07;",$parts[last()])
@@ -401,9 +401,24 @@ declare function core:import($frame,$prefix,$ns,$loc) {
 		concat("import * as ", core:clip($prefix), " from ", replace($loc,"(\.xql|\.rdl)&quot;$",".js&quot;"), "")
 };
 
-declare function core:function-name($name,$arity,$default-prefix){
+declare function core:function-name($name,$arity,$prefix,$default-prefix){
 	let $p := tokenize($name,":")
-	return concat("&#07;",$p[last() - 1],if($p[last() - 1]) then "" else $default-prefix,".",core:cc($p[last()]),"_",$arity)
+	let $prefix :=
+		if($p[last() - 1] eq $prefix) then
+				()
+			else if($p[last() - 1]) then
+			   $p[last() - 1]
+			else
+				$default-prefix
+	return
+		concat(
+			"&#07;",
+			core:cc($prefix),
+			if($prefix) then "." else "",
+			core:cc($p[last()]),
+			"_",
+			$arity
+		)
 };
 
 declare function core:cc($name){
