@@ -70,15 +70,17 @@ declare %private function core:is-fn-seq($value) {
 	if(array:size($value) eq 0) then
 		()
 	else
-		distinct-values(array:flatten(
+		array:flatten(
 			array:for-each($value,function($_){
 				if($_ instance of map(xs:string, item()?)) then
 					(: only check strings in sequence :)
 					core:is-fn-seq($_("args"))
+				else if($_ instance of xs:string and matches($_,"^\.$|^\$$")) then
+					$_
 				else
-					$_ instance of xs:string and matches($_,"^\.$|^\$$")
+					()
 			})
-		)) = true()
+		)
 };
 
 declare function core:process-args($frame,$args){
@@ -91,7 +93,9 @@ declare function core:process-args($frame,$args){
 					let $name := $frame("$caller")
 					let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
 					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
-					let $is-fn-seq := core:is-fn-seq($arg)
+					let $fn-seq := core:is-fn-seq($arg)
+					let $n := console:log($fn-seq)
+					let $is-fn-seq := count($fn-seq) > 0
 					return
 						array:append($pre,
 							if($is-params or ($is-fn-seq = false() and $is-body = false())) then
@@ -103,7 +107,7 @@ declare function core:process-args($frame,$args){
 								})
 							else
 								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq)
-								return if($is-fn-seq) then concat("(",$ret,")") else $ret
+								return if($fn-seq = ".") then concat("function($_0) { return n.seq(",$ret,")}") else if($is-fn-seq) then concat("n.seq(",$ret,")") else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
 					if($arg("name") eq "" and array:size($pre) > 1) then
@@ -211,7 +215,7 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at){
 	if(array:size($tree) > 0) then
 		let $frame := map:put($frame,"$at",$at)
 		let $head := array:head($tree)
-		let $frame := if($head("name") eq "core:module") then map:put($frame,"$prefix",$head("args")(2)) else $frame
+		let $frame := if($head instance of map(xs:string,item()?) and $head("name") eq "core:module") then map:put($frame,"$prefix",$head("args")(2)) else $frame
 		let $val := core:process-value($head,$frame)
 		let $is-seq := $val instance of array(item()?)
 		let $val :=
@@ -257,106 +261,105 @@ declare function core:hoist($tree){
 };
 
 declare function core:process-value($value,$frame){
-		if($value instance of map(xs:string,item()?)) then
-			let $name := $value("name")
-			let $args := $value("args")
-			let $s := array:size($args)
-			return
-				if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
-					let $local := replace($name,"^core:","")
-					let $is-type := $local = map:keys($core:typemap)
-					let $is-native := $core:native = $local
-					let $s := if($is-type or $is-native) then $s + 1 else $s
-					let $is-fn := ($local = ("define","define-private") and $s eq 6) or ($local eq "function" and $s eq 4)
-					let $frame := map:put($frame,"$caller",concat($name,"#",$s))
-					let $hoisted :=
-						if($is-fn) then
-							let $i := if($local = ("define","define-private")) then 6 else 3
-							return core:hoist($args($i))
-						else
-							()
-					let $args := core:process-args($frame,$args)
-					let $hoisted :=
-						if($is-fn) then
-							let $params := array:flatten($args(if($local = ("define","define-private")) then 4 else 1))
-							return
-								if(exists($hoisted) and exists($params)) then
-									distinct-values($hoisted[not(.=$params)])
-								else
-									$hoisted
-						else
-							()
-					let $args :=
-						if($local = ("define","define-private","function")) then
-							let $i := if($local = ("define","define-private")) then 6 else 3
-							let $body :=
-								if(exists($hoisted)) then
-									concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$args($i))
-								else
-									concat("return ",$args($i))
-							return a:put($args,$i,$body)
-						else
-							$args
-					let $args :=
-						if($is-type or $is-native) then
-							(: TODO append suffix :)
-							array:insert-before($args,1,$local)
-						else
-							$args
-					let $args :=
-						a:for-each($args,function($_){
-							if($_ instance of array(item()?) and array:size($_)>1 and $_(2) instance of map(xs:string,item()?) and $_(2)("name") eq "") then
-								core:serialize($_,$frame)
-							else if($_ instance of array(item()?) and not($is-fn)) then
-								concat("n.seq",core:serialize($_,$frame))
-							else if($_ instance of xs:string and matches($_,"^\$")) then
-								core:convert($_,$frame)
+	if($value instance of map(xs:string,item()?)) then
+		let $name := $value("name")
+		let $args := $value("args")
+		let $s := array:size($args)
+		return
+			if(matches($name,"^core:[" || $raddle:ncname || "]+$")) then
+				let $local := replace($name,"^core:","")
+				let $is-type := $local = map:keys($core:typemap)
+				let $is-native := $core:native = $local
+				let $s := if($is-type or $is-native) then $s + 1 else $s
+				let $is-fn := ($local = ("define","define-private") and $s eq 6) or ($local eq "function" and $s eq 4)
+				let $frame := map:put($frame,"$caller",concat($name,"#",$s))
+				let $hoisted :=
+					if($is-fn) then
+						let $i := if($local = ("define","define-private")) then 6 else 3
+						return core:hoist($args($i))
+					else
+						()
+				let $args := core:process-args($frame,$args)
+				let $hoisted :=
+					if($is-fn) then
+						let $params := array:flatten($args(if($local = ("define","define-private")) then 4 else 1))
+						return
+							if(exists($hoisted) and exists($params)) then
+								distinct-values($hoisted[not(.=$params)])
 							else
-								$_
-						})
-					let $s := array:size($args)
-					let $fn :=
-						if($is-type) then
-							(: call typegen/constructor :)
-							let $a := $core:typemap($local)
-							let $f := concat("core:typegen",if($a > 0) then $a else "")
-							return function-lookup(QName("http://raddle.org/javascript", $f),$s)
-						else if($is-native) then
-							function-lookup(QName("http://raddle.org/javascript", "core:native"),$s)
-						else
-							function-lookup(QName("http://raddle.org/javascript", $name),$s)
-					let $n := if(empty($fn)) then console:log(($name,"#",$s,$value)) else ()
-					return apply($fn,$args)
-				else if($name eq "") then
-					core:process-args(map:put($frame,"$caller",""),$args)
-				else
-					let $frame := map:put($frame,"$caller",concat($name,"#",$s))
-					let $args := core:process-args($frame,$args)
-					(: FIXME add check for seq calls :)
-					let $ret :=
-(:						core:serialize($args,$frame):)
-						a:fold-left-at($args,"",function($pre,$cur,$at){
-							let $is-seq := $cur instance of array(item()?)
-							return concat($pre,
-								if($at>1) then "," else "",
-(:								if($is-seq) then let $n := console:log($cur) return "n.seq" else "",:)
-								core:serialize($cur,$frame)
-							)
-						})
-					return
-						(: FIXME add default fn ns prefix :)
-						let $f :=
-						if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
-								concat("&#07;",core:convert($name,$frame))
+								$hoisted
+					else
+						()
+				let $args :=
+					if($local = ("define","define-private","function")) then
+						let $i := if($local = ("define","define-private")) then 6 else 3
+						let $body :=
+							if(exists($hoisted)) then
+								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$args($i))
 							else
-								core:function-name($name,$s,$frame("$prefix"),"fn")
-(:						let $n := console:log($f):)
-						return concat($f,"(",$ret,")")
-		else
-			if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
-				replace($value,"^_","\$_" || $frame("$at"))
+								concat("return ",$args($i))
+						return a:put($args,$i,$body)
+					else
+						$args
+				let $args :=
+					if($is-type or $is-native) then
+						(: TODO append suffix :)
+						array:insert-before($args,1,$local)
+					else
+						$args
+				let $args :=
+					a:for-each($args,function($_){
+						if($_ instance of array(item()?) and array:size($_)>1 and $_(2) instance of map(xs:string,item()?) and $_(2)("name") eq "") then
+							core:serialize($_,$frame)
+						else if($_ instance of array(item()?) and not($is-fn)) then
+							concat("&#07;n.seq",core:serialize($_,$frame))
+						else if($_ instance of xs:string and matches($_,"^\$")) then
+							core:convert($_,$frame)
+						else
+							$_
+					})
+				let $s := array:size($args)
+				let $fn :=
+					if($is-type) then
+						(: call typegen/constructor :)
+						let $a := $core:typemap($local)
+						let $f := concat("core:typegen",if($a > 0) then $a else "")
+						return function-lookup(QName("http://raddle.org/javascript", $f),$s)
+					else if($is-native) then
+						function-lookup(QName("http://raddle.org/javascript", "core:native"),$s)
+					else
+						function-lookup(QName("http://raddle.org/javascript", $name),$s)
+				let $n := if(empty($fn)) then console:log(($name,"#",$s,$value)) else ()
+				return apply($fn,$args)
+			else if($name eq "") then
+				core:process-args(map:put($frame,"$caller",""),$args)
 			else
-				core:serialize($value,$frame)
+				let $frame := map:put($frame,"$caller",concat($name,"#",$s))
+				let $args := core:process-args($frame,$args)
+				(: FIXME add check for seq calls :)
+				let $ret :=
+					a:fold-left-at($args,"",function($pre,$cur,$at){
+						let $is-seq := $cur instance of array(item()?)
+						return concat($pre,
+							if($at>1) then "," else "",
+							if($is-seq) then let $n := console:log($cur) return "&#07;n.seq" else "",
+							core:serialize($cur,$frame)
+						)
+					})
+				return
+					(: FIXME add default fn ns prefix :)
+					let $f :=
+					if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
+							concat("&#07;",core:convert($name,$frame))
+						else
+							core:function-name($name,$s,$frame("$prefix"),"fn")
+(:						let $n := console:log($f):)
+					return concat($f,"(",$ret,")")
+	else
+		if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
+			replace($value,"^_","\$_" || $frame("$at"))
+		else
+			core:serialize($value,$frame)
 };
 
 declare %private function core:is-current-module($frame,$name){
@@ -445,7 +448,7 @@ declare function core:function-name($name,$arity,$prefix,$default-prefix){
 		if($p[last() - 1] eq $prefix) then
 				()
 			else if($p[last() - 1]) then
-			   $p[last() - 1]
+				$p[last() - 1]
 			else
 				$default-prefix
 	return
@@ -498,7 +501,7 @@ declare function core:cap($str){
 
 
 declare function core:if($a,$b,$c){
-	concat("&#07;(",$a," ? ",$b," : ",$c,")")
+	concat("&#07;(",$a," ? &#10;&#13;",$b," : &#10;&#13;",$c,")")
 };
 
 declare function core:typegen1($type,$valtype) {
@@ -513,15 +516,15 @@ declare function core:typegen1($type,$seq) {
 };
 
 declare function core:typegen1($type,$name,$valtype) {
-	concat("n.",$type,"(",$valtype,")")
+	concat("&#07;n.",$type,"(",$valtype,")")
 };
 
 declare function core:select($a,$b){
-	concat("n.select(",$a,",",$b,")")
+	concat("&#07;n.select(",$a,",",$b,")")
 };
 
 declare function core:select-attribute($a,$b){
-	concat("n.selectAttribute(",$a,",",$b,")")
+	concat("&#07;n.selectAttribute(",$a,",",$b,")")
 };
 
 declare function core:typegen2($type,$keytype,$valtype,$body) {
@@ -554,7 +557,7 @@ declare function core:typegen($type) {
 };
 
 declare function core:typegen($type,$val) {
-	"n." || $type || "(" || $val || ")"
+	"&#07;n." || $type || "(" || $val || ")"
 };
 
 declare function core:clip($name){
@@ -574,10 +577,8 @@ declare function core:typegen($type,$frame,$name,$val){
 };
 
 declare function core:typegen($type,$frame,$name,$val,$suffix) {
-	let $name := core:param-name($name)
-	return
-		if($val) then
-			$name || " = n." || $type || "(" || $val || ")"
-		else
-			$name || " /* " || $type || $suffix || " */"
+	if($val) then
+		core:param-name($name) || " = n." || $type || "(" || $val || ")"
+	else
+		core:param-name($name) || " /* " || $type || $suffix || " */"
 };
