@@ -94,12 +94,23 @@ declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 				let $rev := array:reverse($ret)
 				let $last := array:head($rev)
 				(: check if preceded by comma :)
-				let $args :=
+				return
 					if(empty($last)) then
-						$x
+						array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := $x, "suffix" := ""})
 					else
-						[$last, $x]
-				return array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := $args, "suffix" := ""})
+						let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$xqc:operator-regexp)
+						let $preceeds := $has-preceding-op and xqc:op-int($operator) > xqc:op-int($last("name"))
+						let $args :=
+							if($preceeds) then
+								[map { "name" := $operator, "args" := $last("args"), "suffix" := ""},$x]
+							else
+								[$last, $x]
+						let $name :=
+							if($preceeds) then
+								$last("name")
+							else
+								$operator
+						return array:append(array:reverse(array:tail($rev)),map { "name" := $name, "args" := $args, "suffix" := ""})
 			else
 				array:append($ret,map { "name" := $operator, "args" := $x, "suffix" := ""})
 		else
