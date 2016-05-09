@@ -368,7 +368,7 @@ declare %private function core:is-current-module($frame,$name){
 
 declare function core:convert($string,$frame){
 	if(matches($string,"&#07;")) then
-		replace($string,"&#07;","")
+		replace(replace($string,"\\","\\\\"),"&#07;","")
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#\p{N}+$","")),":")
 		let $n := if(matches($string,"^\$rdl:")) then console:log(string-join($parts,",")) else ()
@@ -378,14 +378,16 @@ declare function core:convert($string,$frame){
 			else
 				concat("&#07;",replace($parts[1],"\$",""),".",$parts[2])
 	else if(matches($string,"^(&quot;[^&quot;]*&quot;)$")) then
-		$string
+		replace($string,"\\","\\\\")
 	else if(map:contains($core:auto-converted,$string)) then
 		$core:auto-converted($string)
 	else
 		if(string(number($string)) = "NaN") then
-			"&quot;" || $string || "&quot;"
+			"&quot;" || replace($string,"\\","\\\\") || "&quot;"
+		else if(matches($string,"\.")) then
+			concat("&#07;n.decimal(&quot;",$string,"&quot;)")
 		else
-			number($string)
+			$string
 };
 
 declare function core:serialize($value,$params){
@@ -501,7 +503,7 @@ declare function core:cap($str){
 
 
 declare function core:if($a,$b,$c){
-	concat("&#07;(",$a," ? &#10;&#13;",$b," : &#10;&#13;",$c,")")
+	concat("&#07;(n.atomic(",$a,") ? &#10;&#13;",$b," : &#10;&#13;",$c,")")
 };
 
 declare function core:typegen1($type,$valtype) {
