@@ -466,7 +466,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				0
 		let $ret := concat($ret,
 			if($no eq 20.06 and $llast eq 21.07) then
-				if($next eq "=#20#07=") then "()" else "(=#20#04=(("
+				if($next eq "=#20#07=") then "())" else "(=#20#04=(("
 			else if($no = (2.06,2.09,20.01,20.04)) then
 				concat(
 					if($letclose) then
@@ -541,7 +541,9 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			else
 				xqc:op-str($no))
 		let $rest :=
-			if(empty($rest) or not($no = (2.09, 20.01))) then
+			if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
+				tail($rest)
+			else if(empty($rest) or not($no = (2.09, 20.01))) then
 				$rest
 			else
 				tail($rest)
@@ -584,7 +586,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				xqc:pop($lastseen)
 			else
 				$lastseen
-		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")))
+(:		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))):)
 		return xqc:body($rest,$ret,$lastseen)
 };
 
