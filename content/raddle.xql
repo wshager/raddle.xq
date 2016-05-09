@@ -6,23 +6,10 @@ import module namespace n="http://raddle.org/native-xq" at "../lib/n.xql";
 import module namespace a="http://raddle.org/array-util" at "../lib/array-util.xql";
 
 import module namespace console="http://exist-db.org/xquery/console";
-(:
-- http://www.w3.org/TR/xquery-30/#prod-xquery30-NCName
-- http://www.w3.org/TR/REC-xml-names
-- http://stackoverflow.com/questions/1631396/what-is-an-xsncname-type-and-when-should-it-be-used
-- http://stackoverflow.com/questions/14891129/regular-expression-pl-and-pn
-:)
 
 declare variable $rdl:suffix := "\+\*\-\?";
 declare variable $rdl:ncname := $xqc:ncname;
 
-(:
-Following https://www.w3.org/TR/xquery-31/#id-precedence-order
-to ensure that raddle operators conform to xquery.
-Unary ops need to be checked in syntax parsing
-Arrow op is useless
-TODO we may support bitwise operators, increment/decrement operators, assignment operators, etc.
-:)
 
 
 declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$:%/#@\^";
@@ -205,11 +192,14 @@ declare function rdl:exec($query,$params){
 	let $n := n:import("../lib/n.xql")
 	return
 		if(map:contains($params,"$transpile")) then
-			let $module := n:import("../lib/" || $params("$transpile") || ".xql")
-			let $frame := map:put($params,"$imports",map {
-				"core": $module
-			})
-			return $module("$exports")("core:transpile#3")(rdl:parse($query,$params),$frame,true())
+			if($params("$transpile") eq "rdl") then
+				rdl:stringify(rdl:parse($query,$params),$params)
+			else
+				let $module := n:import("../lib/" || $params("$transpile") || ".xql")
+				let $frame := map:put($params,"$imports",map {
+					"core": $module
+				})
+				return $module("$exports")("core:transpile#2")(rdl:parse($query,$params),$frame)
 		else
 			let $frame := map:put($params,"$imports",map { "core":$core,"n": $n})
 			return n:eval(rdl:parse($query,$params))($frame)
