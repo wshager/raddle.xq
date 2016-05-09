@@ -94,7 +94,6 @@ declare function core:process-args($frame,$args){
 					let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
 					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
 					let $fn-seq := core:is-fn-seq($arg)
-					let $n := console:log($fn-seq)
 					let $is-fn-seq := count($fn-seq) > 0
 					return
 						array:append($pre,
@@ -107,7 +106,7 @@ declare function core:process-args($frame,$args){
 								})
 							else
 								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq)
-								return if($fn-seq = ".") then concat("function($_0) { return n.seq(",$ret,")}") else if($is-fn-seq) then concat("n.seq(",$ret,")") else $ret
+								return if($fn-seq = ".") then concat("function($_0) { return n.seq(",$ret,");}") else if($is-fn-seq) then concat("n.seq(",$ret,")") else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
 					if($arg("name") eq "" and array:size($pre) > 1) then
@@ -342,18 +341,21 @@ declare function core:process-value($value,$frame){
 						let $is-seq := $cur instance of array(item()?)
 						return concat($pre,
 							if($at>1) then "," else "",
-							if($is-seq) then let $n := console:log($cur) return "&#07;n.seq" else "",
-							core:serialize($cur,$frame)
+							if($cur instance of xs:string) then
+								$cur
+							else if($is-seq) then
+								concat("&#07;n.seq",core:serialize($cur,$frame))
+							else
+								core:serialize($cur,$frame)
 						)
 					})
 				return
 					(: FIXME add default fn ns prefix :)
 					let $f :=
-					if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
+						if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 							concat("&#07;",core:convert($name,$frame))
 						else
 							core:function-name($name,$s,$frame("$prefix"),"fn")
-(:						let $n := console:log($f):)
 					return concat($f,"(",$ret,")")
 	else
 		if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
@@ -368,7 +370,7 @@ declare %private function core:is-current-module($frame,$name){
 
 declare function core:convert($string,$frame){
 	if(matches($string,"&#07;")) then
-		replace(replace($string,"\\","\\\\"),"&#07;","")
+		replace($string,"&#07;","")
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#\p{N}+$","")),":")
 		let $n := if(matches($string,"^\$rdl:")) then console:log(string-join($parts,",")) else ()
@@ -378,12 +380,12 @@ declare function core:convert($string,$frame){
 			else
 				concat("&#07;",replace($parts[1],"\$",""),".",$parts[2])
 	else if(matches($string,"^(&quot;[^&quot;]*&quot;)$")) then
-		replace($string,"\\","\\\\")
+		replace(replace($string,"\\","\\\\"),"\\\\$","\\$")
 	else if(map:contains($core:auto-converted,$string)) then
 		$core:auto-converted($string)
 	else
 		if(string(number($string)) = "NaN") then
-			"&quot;" || replace($string,"\\","\\\\") || "&quot;"
+			"&quot;" || replace(replace($string,"\\","\\\\"),"\\\\$","\\$") || "&quot;"
 		else if(matches($string,"\.")) then
 			concat("&#07;n.decimal(&quot;",$string,"&quot;)")
 		else
@@ -471,7 +473,7 @@ declare function core:cc($name){
 };
 
 declare function core:var($frame,$name,$def,$body){
-	concat("export const ",replace($name,"&#07;","")," = ",replace($body,"&#07;",""))
+	concat("export const ",replace($name,"&#07;","")," = ",replace($body,"&#07;",""),";")
 };
 
 declare function core:define-private($frame,$name,$def,$args,$type,$body) {
