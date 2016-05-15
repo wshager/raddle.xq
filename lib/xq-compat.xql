@@ -262,7 +262,7 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 			xqc:op-num($next)
 		else
 			0
-	let $n := console:log(($head,",",$no,",",$next,",",$subtype,",",$seqtype))
+(:	let $n := console:log(($head,",",$no,",",$next,",",$subtype,",",$seqtype)):)
 	return
 		if($no eq 20.06) then
 			xqc:body($parts,concat($ret,if($subtype) then ")" else "",","),($lastseen,21.06))
@@ -411,16 +411,17 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
-	let $rest :=
-		if($next = $xqc:fns and matches($rest[2],"\)")) then
-			insert-before(remove($rest,2),2,element fn:match {
-				element fn:group {
-					attribute nr { 1 },
-					"(.)"
-				}
-			})
+	let $llast := $lastseen[last()]
+	let $ret :=
+		if($llast eq 19.01) then
+			concat($ret,")")
 		else
-			$rest
+			$ret
+	let $lastseen :=
+		if($llast eq 19.01) then
+			xqc:pop($lastseen)
+		else
+			$lastseen
 	return
 	if($no eq 1) then
 		let $old := $lastseen
@@ -462,6 +463,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			not($llast = (2.09,2.10) or ($llast eq 2.08 and $hascomma = false())) or
 			($llast eq 20.06)
 		)
+		let $n := if($no eq 2.09) then console:log($llast) else ()
 		let $elsecloser := if($no eq 2.08) then xqc:last-index-of($lastseen, 2.07) else 0
 		let $retncloser := if($no eq 2.11) then xqc:last-index-of($lastseen, 2.1) else 0
 		let $letclose := $no eq 2.09 and not($llast eq 20.06 or empty($lastseen)) and $hascomma = false()
@@ -494,7 +496,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 							if(matches($next,"#20#08")) then
 								"."
 							else if($positional) then
-								".=#5#07="
+								"position(.)=#5#07="
 							else ""
 						, $next)
 					else ""
@@ -538,13 +540,23 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				if($llast eq 20.04) then "))" else ")"
 			else if($no eq 20.06) then
 				"("
+			else if($no eq 19.01) then
+				xqc:op-str($no) || "("
 			else
-				xqc:op-str($no))
+				xqc:op-str($no)
+		)
 		let $rest :=
 			if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				tail($rest)
 			else if(empty($rest) or not($no = (2.09, 20.01))) then
 				$rest
+			else if($next = $xqc:fns and matches($rest[2],"\)")) then
+				insert-before(remove(tail($rest),1),1,element fn:match {
+					element fn:group {
+						attribute nr { 1 },
+						"(.)"
+					}
+				})
 			else
 				tail($rest)
 		let $lastseen :=
@@ -580,13 +592,13 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				return ($lastseen,$no)
 			else if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				xqc:pop($lastseen)
-			else if($no eq 20.06 or round($no) eq 21) then
+			else if($no eq 20.06 or round($no) eq 21 or $no eq 19.01) then
 				($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
 				$lastseen
-(:		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))):)
+		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")))
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -651,10 +663,10 @@ declare function xqc:body($parts,$ret,$lastseen){
 							}
 						})
 					else if($head = $xqc:fns and matches($next,"\)")) then
-						insert-before($rest,2,element fn:match {
+						insert-before(tail($rest),1,element fn:match {
 							element fn:group {
 								attribute nr { 1 },
-								"."
+								"(.)"
 							}
 						})
 					else
