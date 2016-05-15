@@ -93,24 +93,23 @@ declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 			return if(array:size($ret)>0) then
 				let $rev := array:reverse($ret)
 				let $last := array:head($rev)
+				let $ret := array:reverse(array:tail($rev))
+				let $op := xqc:op-int($operator)
 				(: check if preceded by comma :)
 				return
 					if(empty($last)) then
-						array:append(array:reverse(array:tail($rev)),map { "name" := $operator, "args" := $x, "suffix" := ""})
+						array:append($ret,map { "name" := $operator, "args" := $x, "suffix" := ""})
 					else
 						let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$xqc:operator-regexp)
-						let $preceeds := $has-preceding-op and xqc:op-int($operator) > xqc:op-int($last("name"))
-						let $args :=
-							if($preceeds) then
-								[map { "name" := $operator, "args" := $last("args"), "suffix" := ""},$x]
+						let $preceeds := $has-preceding-op and $op > xqc:op-int($last("name"))
+						return
+							if($preceeds and $op < 20) then
+(:								let $n := console:log(($operator," > ",$last("name")," || ",$x," || ",$last)) return:)
+								let $y := map { "name" := $operator, "args" := [$last("args")(2),$x], "suffix" := ""}
+								return array:append($ret,map { "name" := $last("name"), "args" := [$last("args")(1), $y], "suffix" := ""})
 							else
-								[$last, $x]
-						let $name :=
-							if($preceeds) then
-								$last("name")
-							else
-								$operator
-						return array:append(array:reverse(array:tail($rev)),map { "name" := $name, "args" := $args, "suffix" := ""})
+								array:append($ret,map { "name" := $operator, "args" := [$last, $x], "suffix" := ""})
+
 			else
 				array:append($ret,map { "name" := $operator, "args" := $x, "suffix" := ""})
 		else
