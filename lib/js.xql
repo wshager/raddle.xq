@@ -95,6 +95,7 @@ declare function core:process-args($frame,$args){
 					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
+					let $n := if($is-fn-seq) then console:log($arg) else ()
 					return
 						array:append($pre,
 							if($is-params or ($is-fn-seq = false() and $is-body = false())) then
@@ -292,11 +293,13 @@ declare function core:process-value($value,$frame){
 				let $args :=
 					if($local = ("define","define-private","function")) then
 						let $i := if($local = ("define","define-private")) then 6 else 3
+						let $seqtype := if($local = ("define","define-private")) then $args(5) else $args(2)
+						let $seqtype := substring($seqtype,1,string-length($seqtype) - 1)
 						let $body :=
 							if(exists($hoisted)) then
-								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$args($i))
+								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$seqtype,$args($i),".last())")
 							else
-								concat("return ",$args($i))
+								concat("return ",$seqtype,$args($i),")")
 						return a:put($args,$i,$body)
 					else
 						$args
@@ -486,7 +489,7 @@ declare function core:define($frame,$name,$def,$args,$type,$body) {
 
 declare function core:define($frame,$name,$def,$args,$type,$body,$private) {
 	let $ret := string-join(array:flatten($args),",")
-	return concat(if($private) then "" else "export ","function ",core:cc(tokenize(core:clip($name),":")[last()]),"(",$ret,") /*",$type,"*/ {&#10;&#13;",replace($body,"&#07;",""),";&#10;&#13;}")
+	return concat(if($private) then "" else "export ","function ",core:cc(tokenize(core:clip($name),":")[last()]),"(",$ret,") {&#10;&#13;",replace($body,"&#07;",""),";&#10;&#13;}")
 };
 
 declare function core:describe($frame,$name,$def,$args,$type){
