@@ -83,7 +83,6 @@ declare variable $xqc:operators := map {
 	20.02: "]",
 	20.03: "?",
 	20.04: "[",
-	20.05: "[",
 	20.06: "{",
 	20.07: "}",
 	20.08: "@",
@@ -200,9 +199,12 @@ declare variable $xqc:operator-map := map {
 	20.01: "filter",
 	20.03: "lookup",
 	20.04: "array",
-	20.05: "filter-at",
 	20.08: "select-attribute"
 };
+
+declare variable $xqc:fns := (
+	"position","last","name","node-name","nilled","string","data","base-uri","document-uri","number","string-length","normalize-space"
+);
 
 declare function xqc:normalize-query($query as xs:string?,$params) {
 	let $query := replace(replace(replace(replace($query,"%3E",">"),"%3C","<"),"%2C",","),"%3A",":")
@@ -226,13 +228,6 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 	let $query := replace($query,"\s+","")
 	(: TODO check if there are any ops left and either throw or fix :)
 	return $query
-};
-
-declare function xqc:normalize-filter($query as xs:string?) {
-	if(matches($query,"^([\+\-]?\p{N}+)|position$")) then (: TODO replace correct integers :)
-		".=#5#07=" || $query
-	else
-		$query
 };
 
 declare function xqc:seqtype($parts,$ret,$lastseen){
@@ -416,6 +411,17 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
+	let $rest :=
+		if($next = $xqc:fns and matches($rest[2],"\)")) then
+			insert-before(remove($rest,2),2,element fn:match {
+				element fn:group {
+					attribute nr { 1 },
+					"(.)"
+				}
+			})
+		else
+			$rest
+	return
 	if($no eq 1) then
 		let $old := $lastseen
 		(: FIXME dont close a sequence :)
@@ -450,7 +456,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	else
 		let $old := $lastseen
 		let $llast := $lastseen[last()]
-		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?(\p{N}+|\$))|position$")
+		let $positional := $no eq 20.01 and $next and matches($next,"^([\+\-]?(\p{N}+))$|^\$[" || $xqc:ncname|| "]+$") and $rest[2] eq "=#20#02="
 		let $hascomma := substring($ret,string-length($ret)) eq ","
 		let $letopener := $no eq 2.09 and (
 			not($llast = (2.09,2.10) or ($llast eq 2.08 and $hascomma = false())) or
@@ -477,10 +483,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 						)
 					else "",
 					if($letopener) then "(" else "",
-					if($positional) then
-						xqc:op-str(20.05)
-					else
-						xqc:op-str($no),
+					xqc:op-str($no),
 					if($no eq 20.04) then "(" else "",
 					if($no eq 2.06) then "" else "(",
 					if($no eq 2.09) then
@@ -491,10 +494,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 							if(matches($next,"#20#08")) then
 								"."
 							else if($positional) then
-								if(matches($next,"position")) then
-									"."
-								else
-									".=#5#07="
+								".=#5#07="
 							else ""
 						, $next)
 					else ""
@@ -650,6 +650,13 @@ declare function xqc:body($parts,$ret,$lastseen){
 								xqc:op-str(20.04)
 							}
 						})
+					else if($head = $xqc:fns and matches($next,"\)")) then
+						insert-before($rest,2,element fn:match {
+							element fn:group {
+								attribute nr { 1 },
+								"."
+							}
+						})
 					else
 						$rest
 				(: we look ahead, but there was nothing before... :)
@@ -791,7 +798,6 @@ declare function xqc:op-str($op){
 	concat("=#",replace(string($op),"\.","#"),"=")
 };
 
-
 declare function xqc:operator-precedence($val,$operator,$ret){
 	let $rev := array:reverse($ret)
 	let $last := array:head($rev)
@@ -824,17 +830,18 @@ declare function xqc:operator-precedence($val,$operator,$ret){
 					array:append($nargs,$val)
 				else
 					$nargs
-			return if($argsize>1 and $is-unary-op) then
-				let $pre := $last("args")(2)
-				return [
-					$last("args")(1),
-					map {
-						"name" := $pre("name"),
-						"args" := array:append($pre("args"),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}),
-						"suffix" := ""
-					}]
-			else
-				[$last("args")(1),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}]
+			return
+				if($argsize>1 and $is-unary-op) then
+					let $pre := $last("args")(2)
+					return [
+						$last("args")(1),
+						map {
+							"name" := $pre("name"),
+							"args" := array:append($pre("args"),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}),
+							"suffix" := ""
+						}]
+				else
+					[$last("args")(1),map { "name" := $operator, "args" :=$nargs, "suffix" := ""}]
 		else
 			let $nargs := if(empty($last)) then [] else [$last]
 			return
