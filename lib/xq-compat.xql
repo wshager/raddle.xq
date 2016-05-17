@@ -412,6 +412,16 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 	let $llast := $lastseen[last()]
+	let $rest :=
+		if($next = $xqc:fns and matches($rest[2],"\)")) then
+			insert-before(remove($rest,2),2,element fn:match {
+				element fn:group {
+					attribute nr { 1 },
+					"(.)"
+				}
+			})
+		else
+			$rest
 	let $ret :=
 		if($llast eq 19.01) then
 			concat($ret,")")
