@@ -171,6 +171,7 @@ declare variable $xqc:types := (
 );
 
 declare variable $xqc:operator-map := map {
+	2.06: "iff",
 	2.09: "item",
 	5.01: "eq",
 	5.02: "ne",
@@ -473,7 +474,6 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			not($llast = (2.09,2.10) or ($llast eq 2.08 and $hascomma = false())) or
 			($llast eq 20.06)
 		)
-		let $n := if($no eq 2.09) then console:log($llast) else ()
 		let $elsecloser := if($no eq 2.08) then xqc:last-index-of($lastseen, 2.07) else 0
 		let $retncloser := if($no eq 2.11) then xqc:last-index-of($lastseen, 2.1) else 0
 		let $letclose := $no eq 2.09 and not($llast eq 20.06 or empty($lastseen)) and $hascomma = false()
@@ -552,7 +552,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				"("
 			else if($no eq 19.01) then
 				xqc:op-str($no) || "("
-			else
+ 			else
 				xqc:op-str($no)
 		)
 		let $rest :=
@@ -560,13 +560,6 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				tail($rest)
 			else if(empty($rest) or not($no = (2.09, 20.01))) then
 				$rest
-			else if($next = $xqc:fns and matches($rest[2],"\)")) then
-				insert-before(remove(tail($rest),1),1,element fn:match {
-					element fn:group {
-						attribute nr { 1 },
-						"(.)"
-					}
-				})
 			else
 				tail($rest)
 		let $lastseen :=
@@ -608,7 +601,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				xqc:pop($lastseen)
 			else
 				$lastseen
-		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")))
+(:		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))):)
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -673,10 +666,10 @@ declare function xqc:body($parts,$ret,$lastseen){
 							}
 						})
 					else if($head = $xqc:fns and matches($next,"\)")) then
-						insert-before(tail($rest),1,element fn:match {
+						insert-before($rest,2,element fn:match {
 							element fn:group {
 								attribute nr { 1 },
-								"(.)"
+								"."
 							}
 						})
 					else
@@ -813,7 +806,7 @@ declare function xqc:op-int($op){
 };
 
 declare function xqc:op-num($op) as xs:decimal {
-	xs:decimal(replace($op,"^=#(\p{N}+)#?(\p{N}*)=$","$1.$20"))
+	xs:decimal(replace($op,"^=#(\p{N}+)#?(\p{N}*)=$","$1.$2"))
 };
 
 declare function xqc:op-str($op){
