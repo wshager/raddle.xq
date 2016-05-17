@@ -95,7 +95,7 @@ declare function core:process-args($frame,$args){
 					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
-					let $n := if($is-fn-seq) then console:log($arg) else ()
+(:					let $n := if($is-fn-seq) then console:log($arg) else ():)
 					return
 						array:append($pre,
 							if($is-params or ($is-fn-seq = false() and $is-body = false())) then
@@ -107,7 +107,7 @@ declare function core:process-args($frame,$args){
 								})
 							else
 								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq)
-								return if($fn-seq = ".") then concat("function($_0) { return n.seq(",$ret,");}") else if($is-fn-seq) then concat("n.seq(",$ret,")") else $ret
+								return if($fn-seq = ".") then concat("function($_0) { return ",$ret,";}") else if($is-fn-seq) then $ret else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
 					if($arg("name") eq "" and array:size($pre) > 1) then
@@ -189,9 +189,8 @@ declare function core:transpile($value,$frame) {
 					let $rdl := concat("core:define($,",$name,",(),(core:item($,a...)),core:item(),(",
 						"(core:integer($,s,array:size($a)),",
 						a:fold-left($occ($name),"",function($p,$_){
-							concat($p,"core:if(core:eq($s,",$_,"),apply(",$name,"_",$_,"#",$_,",$a),")
+							concat($p,"core:iff(core:eq($s,",$_,"),apply(",$name,"_",$_,"#",$_,",$a),")
 						}),"()",string-join((1 to $t) ! ")"),")))")
-					let $n := console:log($rdl)
 					return array:append($pre,raddle:parse($rdl,$frame)(1))
 				else
 					$pre
@@ -221,15 +220,31 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at){
 		let $val :=
 			if($is-seq) then
 				if($top) then
+					let $s := array:size($val)
 					(: assume this is a let-return seq :)
-					concat("(",a:fold-left-at($val,"",function($pre,$cur,$at){
-						concat($pre,if($at>1) then ",&#10;&#13;" else "",$cur)
-					}),")")
+					return
+						a:fold-left-at($val,"",function($pre,$cur,$at){
+							concat($pre,
+								if($at eq $s) then
+									concat(";&#10;&#13;return ",$cur)
+								else
+									concat(
+										if($at>1) then
+											";&#10;&#13;"
+										else
+											"",
+										$cur
+									)
+							)
+						})
 				else
 					core:serialize($val,$frame)
 			else
+				(: if top in this case, expect exports! :)
+				let $n := if($top) then () else console:log($frame("$caller")) return
 				$val
-		return core:process-tree(array:tail($tree),$frame,$top,concat($ret,if($at > 1 and $is-seq = false()) then if($top) then "&#10;&#13;" else "," else "",$val),$at + 1)
+		let $ret := concat($ret,if($at > 1 and $is-seq = false()) then if($top) then "&#10;&#13;" else "," else "",$val)
+		return core:process-tree(array:tail($tree),$frame,$top,$ret,$at + 1)
 	else if($at = 1) then
 		"n.seq()"
 	else
@@ -297,7 +312,8 @@ declare function core:process-value($value,$frame){
 						let $seqtype := substring($seqtype,1,string-length($seqtype) - 1)
 						let $body :=
 							if(exists($hoisted)) then
-								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;return ",$seqtype,$args($i),".last())")
+								(: assume this is a let-return seq :)
+								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;",$args($i))
 							else
 								concat("return ",$seqtype,$args($i),")")
 						return a:put($args,$i,$body)
@@ -354,12 +370,10 @@ declare function core:process-value($value,$frame){
 					})
 				return
 					(: FIXME add default fn ns prefix :)
-					let $f :=
-						if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
-							concat("&#07;",core:convert($name,$frame))
-						else
-							core:function-name($name,$s,$frame("$prefix"),"fn")
-					return concat($f,"(",$ret,")")
+					if(matches($name,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
+						concat("&#07;n.call(",core:convert($name,$frame),",",$ret,")")
+					else
+						concat(core:function-name($name,$s,$frame("$prefix"),"fn"),"(",$ret,")")
 	else
 		if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
 			replace($value,"^_","\$_" || $frame("$at"))
@@ -376,9 +390,10 @@ declare function core:convert($string,$frame){
 		replace($string,"&#07;","")
 	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#\p{N}+$","")),":")
-		let $n := if(matches($string,"^\$rdl:")) then console:log(string-join($parts,",")) else ()
 		return
-			if(count($parts) eq 1 or matches($parts[1],concat("^\$?",$frame("$prefix")))) then
+			if(count($parts) eq 1) then
+				concat("&#07;",$parts[last()])
+			else if(matches($parts[1],concat("^\$?",$frame("$prefix")))) then
 				concat("&#07;",$parts[last()])
 			else
 				concat("&#07;",replace($parts[1],"\$",""),".",$parts[2])
@@ -489,7 +504,8 @@ declare function core:define($frame,$name,$def,$args,$type,$body) {
 
 declare function core:define($frame,$name,$def,$args,$type,$body,$private) {
 	let $ret := string-join(array:flatten($args),",")
-	return concat(if($private) then "" else "export ","function ",core:cc(tokenize(core:clip($name),":")[last()]),"(",$ret,") {&#10;&#13;",replace($body,"&#07;",""),";&#10;&#13;}")
+	let $fname := core:cc(tokenize(core:clip($name),":")[last()])
+	return concat(if($private) then "" else "export ","function ",$fname,"(",$ret,") {&#10;&#13;",replace($body,"&#07;",""),";&#10;&#13;}")
 };
 
 declare function core:describe($frame,$name,$def,$args,$type){
@@ -498,7 +514,7 @@ declare function core:describe($frame,$name,$def,$args,$type){
 
 declare function core:function($args,$type,$body) {
 	let $args := string-join(array:flatten($args),",") return
-	concat("&#07;function(",$args,") /*",$type,"*/ {&#10;&#13;",$body,";&#10;&#13;}")
+	concat("&#07;function(",$args,") {&#10;&#13;",$body,";&#10;&#13;}")
 };
 
 declare function core:cap($str){
@@ -507,8 +523,8 @@ declare function core:cap($str){
 };
 
 
-declare function core:if($a,$b,$c){
-	concat("&#07;(n.atomic(",$a,") ? &#10;&#13;",$b," : &#10;&#13;",$c,")")
+declare function core:iff($a,$b,$c){
+	concat("&#07;n.iff(",$a,",&#10;&#13;",$b,",&#10;&#13;",$c,")")
 };
 
 declare function core:typegen1($type,$valtype) {
