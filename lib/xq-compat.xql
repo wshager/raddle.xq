@@ -539,9 +539,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				if($llast eq 20.04) then "))" else ")"
 			else if($no eq 20.06) then
 				"("
- 			else
-				xqc:op-str($no)
-		)
+			else
+				xqc:op-str($no))
 		let $rest :=
 			if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				tail($rest)
