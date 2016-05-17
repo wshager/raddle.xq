@@ -412,7 +412,6 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
-	let $llast := $lastseen[last()]
 	let $rest :=
 		if($next = $xqc:fns and matches($rest[2],"\)")) then
 			insert-before(remove($rest,2),2,element fn:match {
@@ -423,16 +422,6 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			})
 		else
 			$rest
-	let $ret :=
-		if($llast eq 19.01) then
-			concat($ret,")")
-		else
-			$ret
-	let $lastseen :=
-		if($llast eq 19.01) then
-			xqc:pop($lastseen)
-		else
-			$lastseen
 	return
 	if($no eq 1) then
 		let $old := $lastseen
@@ -550,8 +539,6 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				if($llast eq 20.04) then "))" else ")"
 			else if($no eq 20.06) then
 				"("
-			else if($no eq 19.01) then
-				xqc:op-str($no) || "("
  			else
 				xqc:op-str($no)
 		)
@@ -595,7 +582,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				return ($lastseen,$no)
 			else if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				xqc:pop($lastseen)
-			else if($no eq 20.06 or round($no) eq 21 or $no eq 19.01) then
+			else if($no eq 20.06 or round($no) eq 21) then
 				($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
