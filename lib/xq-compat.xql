@@ -412,16 +412,17 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
-	let $rest :=
-		if($next = $xqc:fns and matches($rest[2],"\)")) then
-			insert-before(remove($rest,2),2,element fn:match {
-				element fn:group {
-					attribute nr { 1 },
-					"(.)"
-				}
-			})
+	let $llast := $lastseen[last()]
+	let $ret :=
+		if($llast eq 19.01) then
+			concat($ret,")")
 		else
-			$rest
+			$ret
+	let $lastseen :=
+		if($llast eq 19.01) then
+			xqc:pop($lastseen)
+		else
+			$lastseen
 	return
 	if($no eq 1) then
 		let $old := $lastseen
@@ -539,13 +540,23 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				if($llast eq 20.04) then "))" else ")"
 			else if($no eq 20.06) then
 				"("
+			else if($no eq 19.01) then
+				xqc:op-str($no) || "("
 			else
-				xqc:op-str($no))
+				xqc:op-str($no)
+		)
 		let $rest :=
 			if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				tail($rest)
 			else if(empty($rest) or not($no = (2.09, 20.01))) then
 				$rest
+			else if($next = $xqc:fns and matches($rest[2],"\)")) then
+				insert-before(remove(tail($rest),1),1,element fn:match {
+					element fn:group {
+						attribute nr { 1 },
+						"(.)"
+					}
+				})
 			else
 				tail($rest)
 		let $lastseen :=
@@ -581,7 +592,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				return ($lastseen,$no)
 			else if($no eq 20.06 and $llast eq 21.07 and $next eq "=#20#07=") then
 				xqc:pop($lastseen)
-			else if($no eq 20.06 or round($no) eq 21) then
+			else if($no eq 20.06 or round($no) eq 21 or $no eq 19.01) then
 				($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
@@ -652,10 +663,10 @@ declare function xqc:body($parts,$ret,$lastseen){
 							}
 						})
 					else if($head = $xqc:fns and matches($next,"\)")) then
-						insert-before($rest,2,element fn:match {
+						insert-before(tail($rest),1,element fn:match {
 							element fn:group {
 								attribute nr { 1 },
-								"."
+								"(.)"
 							}
 						})
 					else
@@ -819,6 +830,7 @@ declare function xqc:operator-precedence($val,$operator,$ret){
 	let $args :=
 		if($preceeds) then
 			(: if operator > preceding swap the nesting :)
+			let $n := console:log(($operator,",",$preceeds))
 			let $argsize := array:size($last("args"))
 			let $nargs :=
 				if($is-unary-op) then
