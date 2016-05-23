@@ -91,8 +91,8 @@ declare function core:process-args($frame,$args){
 			a:fold-left-at($args,[],function($pre,$arg,$at){
 				if($arg instance of array(item()?)) then
 					let $name := $frame("$caller")
-					let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#3" and $at = 1)
-					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#3" and $at = 3)
+					let $is-params := ($name = ("core:define-private#6","core:define#6") and $at = 4) or ($name eq "core:function#4" and $at = 1)
+					let $is-body := ($name = ("core:define-private#6","core:define#6") and $at = 6) or ($name eq "core:function#4" and $at = 3)
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
 (:					let $n := if($is-fn-seq) then console:log($arg) else ():)
@@ -106,7 +106,7 @@ declare function core:process-args($frame,$args){
 										core:process-value($_,map:put($frame,"$at",$at))
 								})
 							else
-								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq)
+								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq,"",$at,if($is-body) then $pre($at - 1) else ())
 								return if($fn-seq = ".") then concat("function($_0) { return ",$ret,";}") else if($is-fn-seq) then $ret else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
@@ -125,7 +125,7 @@ declare function core:process-args($frame,$args){
 					array:append($pre,if(matches($arg,"^\$\p{N}")) then
 						replace($arg,"^\$","\$_")
 					else
-						$arg)
+						core:serialize($arg,$frame))
 				else if(matches($arg,"^[" || $raddle:ncname || "]?:?[" || $raddle:ncname || "]+#(\p{N}|N)+")) then
 					array:append($pre,$arg)
 				else if(matches($arg,"^_[" || $raddle:suffix || "]?$")) then
@@ -208,7 +208,11 @@ declare function core:process-tree($value,$frame,$top) {
 	core:process-tree($value,$frame,$top,"",1)
 };
 
-declare function core:process-tree($tree,$frame,$top,$ret,$at){
+declare function core:process-tree($tree,$frame,$top,$ret,$at) {
+	core:process-tree($tree,$frame,$top,$ret,$at,())
+};
+
+declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 	(: TODO mirror n:eval :)
 	(: TODO cleanup into process-args :)
 	if(array:size($tree) > 0) then
@@ -216,17 +220,19 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at){
 		let $head := array:head($tree)
 		let $frame := if($head instance of map(xs:string,item()?) and $head("name") eq "core:module") then map:put($frame,"$prefix",$head("args")(2)) else $frame
 		let $val := core:process-value($head,$frame)
+		let $is-body := ($frame("$caller") = ("core:define#6","core:define-private#6")) or ($frame("$caller") = "core:function#4")
 		let $is-seq := $val instance of array(item()?)
+(:		let $n := console:log(($frame("$caller")," || ",$at," | ",$is-body," | ",$is-seq," | ",$val)):)
 		let $val :=
 			if($is-seq) then
-				if($top) then
+(:				if($top) then:)
 					let $s := array:size($val)
 					(: assume this is a let-return seq :)
 					return
 						a:fold-left-at($val,"",function($pre,$cur,$at){
 							concat($pre,
 								if($at eq $s) then
-									concat(";&#10;&#13;return ",$cur)
+									concat(";&#10;&#13;return ",substring($seqtype,1,string-length($seqtype) - 1),$cur,")")
 								else
 									concat(
 										if($at>1) then
@@ -237,13 +243,16 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at){
 									)
 							)
 						})
-				else
-					core:serialize($val,$frame)
+(:				else:)
+(:					let $n := console:log(($frame("$caller")," || ",$val)) return:)
+(:					core:serialize($val,$frame):)
 			else
 				(: if top in this case, expect exports! :)
-				let $n := if($top) then () else console:log($frame("$caller")) return
-				$val
-		let $ret := concat($ret,if($at > 1 and $is-seq = false()) then if($top) then "&#10;&#13;" else "," else "",$val)
+				if($top eq false() and $is-body) then
+					concat("return ",substring($seqtype,1,string-length($seqtype) - 1),$val,")")
+				else
+					$val
+		let $ret := concat($ret,if($ret ne "" and $at > 1 and $is-body = false()) then if($top) then "&#10;&#13;" else ",&#10;&#13;" else "",$val)
 		return core:process-tree(array:tail($tree),$frame,$top,$ret,$at + 1)
 	else if($at = 1) then
 		"n.seq()"
@@ -308,14 +317,11 @@ declare function core:process-value($value,$frame){
 				let $args :=
 					if($local = ("define","define-private","function")) then
 						let $i := if($local = ("define","define-private")) then 6 else 3
-						let $seqtype := if($local = ("define","define-private")) then $args(5) else $args(2)
-						let $seqtype := substring($seqtype,1,string-length($seqtype) - 1)
 						let $body :=
 							if(exists($hoisted)) then
-								(: assume this is a let-return seq :)
 								concat("var ",string-join(($hoisted ! core:cc(.)),","),";&#10;&#13;",$args($i))
 							else
-								concat("return ",$seqtype,$args($i),")")
+								$args($i)
 						return a:put($args,$i,$body)
 					else
 						$args
@@ -524,7 +530,7 @@ declare function core:cap($str){
 
 
 declare function core:iff($a,$b,$c){
-	concat("&#07;n.iff(",$a,",&#10;&#13;",$b,",&#10;&#13;",$c,")")
+	concat("&#07;n.atomic(",$a,") ?&#10;&#13;(",$b,") :&#10;&#13;(",$c,")")
 };
 
 declare function core:typegen1($type,$valtype) {
@@ -538,8 +544,8 @@ declare function core:typegen1($type,$seq) {
 		()
 };
 
-declare function core:typegen1($type,$name,$valtype) {
-	concat("&#07;n.",$type,"(",$valtype,")")
+declare function core:typegen1($type,$name,$seq) {
+	concat("&#07;n.",$type,"(",$name,",",$seq,")")
 };
 
 declare function core:select($a,$b){
