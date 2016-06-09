@@ -101,10 +101,11 @@ declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 						array:append($ret,map { "name" := $operator, "args" := $x, "suffix" := ""})
 					else
 						let $has-preceding-op := $last instance of map(xs:string?,item()?) and matches($last("name"),$xqc:operator-regexp)
-						let $preceeds := $has-preceding-op and $op > xqc:op-int($last("name"))
+						let $prev-op := if($has-preceding-op) then xqc:op-int($last("name")) else ()
+						let $preceeds := $has-preceding-op and $op > $prev-op and not($op eq 20 and $prev-op eq 19)
 						return
-							if($preceeds and $op < 20) then
-(:								let $n := console:log(($operator," > ",$last("name")," || ",$x," || ",$last)) return:)
+							if($preceeds) then
+(:								let $n := console:log(($op," > ",$prev-op ," || ",$x," || ",$last)) return:)
 								let $y := map { "name" := $operator, "args" := [$last("args")(2),$x], "suffix" := ""}
 								return array:append($ret,map { "name" := $last("name"), "args" := [$last("args")(1), $y], "suffix" := ""})
 							else
