@@ -315,8 +315,6 @@ declare function core:find-tc($a,$name,$pos){
 				if($pos) then $pos else $i
 			else
 				core:find-tc($x("args"),$name,$i)
-		else if($x instance of array(item()?)) then
-			core:find-tc($x,$name,$i)
 		else
 			()
 };
@@ -346,29 +344,20 @@ declare function core:tco($a,$tc,$name,$type){
 				(: expect 3 args :)
 				let $args := $n("args")
 				let $self := core:find-tc($args,$name,0)
-				let $nu := console:log($self)
 				return
 					map:put($n,"args",core:tco($args,$self,$name,$type))
 			else if($n instance of array(item()?)) then
 				core:tco($n,$tc,$name,$type)
 			else
-				let $n :=
-					if($ismap) then
-						if($name and $n("name") eq $name) then
-							map:put(map:put($n,"args",[$n("args")]),"name","core:cont")
-						else
-							let $nu := console:log($n) return
-							map:put($n,"args",core:tco($n("args"),(),$name,$type))
-					else
-						$n
-				return
-					if($at > 1 and $at ne $tc) then
-						map {
-							"name": "core:stop",
-							"args": [$type,$n]
-						}
-					else
-						$n
+				if($ismap and $name and $n("name") eq $name) then
+					map:put(map:put($n,"args",[$n("args")]),"name","core:cont")
+				else if($at > 1 and $at ne $tc) then
+					map {
+						"name": "core:stop",
+						"args": [$type,$n]
+					}
+				else
+					$n
 	 })
 };
 
