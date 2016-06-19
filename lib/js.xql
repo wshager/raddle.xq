@@ -98,13 +98,13 @@ declare function core:process-args($frame,$args){
 		let $is-defn := $name = ("core:define-private#6","core:define#6")
 		let $is-anon := $name eq "core:function#4"
 		let $is-typegen := matches($name,"^core:(typegen|" || string-join(map:keys($core:typemap),"|") || ")")
-		let $n := console:log(($is-typegen," | ",$name))
+(:		let $n := console:log(($is-typegen," | ",$name)):)
 		return
 			a:fold-left-at($args,[],function($pre,$arg,$at){
 				if($arg instance of array(item()?)) then
 					let $is-params := ($is-defn and $at = 4) or ($is-anon and $at = 1)
 					let $is-body := ($is-defn and $at = 6) or ($is-anon and $at = 3)
-					let $n := if($is-anon) then console:log($arg) else ()
+(:					let $n := if($is-body) then console:log($arg) else ():)
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
 					return
@@ -236,7 +236,7 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 					let $s := array:size($val)
 					(: assume this is a let-return seq :)
 					return
-						a:fold-left-at($val,"",function($pre,$cur,$at){
+						concat("(",a:fold-left-at($val,"",function($pre,$cur,$at){
 							concat($pre,
 								if($at eq $s) then
 									concat(",&#10;&#13;n.stop($,",substring($seqtype,1,string-length($seqtype) - 1),$cur,"))")
@@ -249,7 +249,7 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 										$cur
 									)
 							)
-						})
+						}),")")
 (:				else:)
 (:					let $n := console:log(($frame("$caller")," || ",$val)) return:)
 (:					core:serialize($val,$frame):)
@@ -362,7 +362,7 @@ declare function core:process-value($value,$frame){
 						function-lookup(QName("http://raddle.org/javascript", "core:native"),$s)
 					else
 						function-lookup(QName("http://raddle.org/javascript", $name),$s)
-				let $n := if(empty($fn)) then console:log(($name,"#",$s,$value)) else ()
+				let $n := if(empty($fn)) then console:log(($name,"#",$s)) else ()
 				return apply($fn,$args)
 			else if($name eq "") then
 				core:process-args(map:put($frame,"$caller",""),$args)
@@ -399,11 +399,13 @@ declare %private function core:is-current-module($frame,$name){
 };
 
 declare function core:convert($string,$frame){
-	if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
+	if(matches($string,"^n\.call")) then
+		$string
+	else if(matches($string,"^(\$.*)$|^([^#]+#[0-9]+)$")) then
 		let $parts := tokenize(core:cc(replace($string,"#\p{N}+$","")),":")
 		return
 			if(count($parts) eq 1) then
-				concat("n.get($,&quot;",replace($parts[1],"\$",""),"&quot;)")
+				concat("n.fetch($,&quot;",replace($parts[1],"\$",""),"&quot;)")
 			else if(matches($parts[1],concat("^\$?",$frame("$prefix")))) then
 				replace($parts[last()],"\$","")
 			else
@@ -567,7 +569,7 @@ declare function core:cap($str){
 
 
 declare function core:iff($a,$b,$c){
-	concat("n.iff(",$a,",&#10;&#13;",$b,",&#10;&#13;",$c,")")
+	concat("n.iff($,",$a,",&#10;&#13;function($){&#10;&#13;return ",$b,";&#10;&#13;},&#10;&#13;function($){&#10;&#13;return ",$c,";&#10;&#13;})")
 };
 
 declare function core:typegen1($type,$valtype) {
@@ -649,7 +651,7 @@ declare function core:typegen($type,$frame,$name,$val){
 declare function core:typegen($type,$frame,$name,$val,$suffix) {
 	let $n := console:log($name) return
 	if($val) then
-		concat("$=n.put($,",core:var-name($name),",n.",$type,"(",$val,"))")
+		concat("n.put($,",core:var-name($name),",n.",$type,"(",$val,"))")
 	else
 		core:param-name($name) || " /* " || $type || $suffix || " */"
 };
