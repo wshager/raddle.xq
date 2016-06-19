@@ -98,13 +98,17 @@ declare function core:process-args($frame,$args){
 		let $is-defn := $name = ("core:define-private#6","core:define#6")
 		let $is-anon := $name eq "core:function#4"
 		let $is-typegen := matches($name,"^core:(typegen|" || string-join(map:keys($core:typemap),"|") || ")")
-(:		let $n := console:log(($is-typegen," | ",$name)):)
 		return
 			a:fold-left-at($args,[],function($pre,$arg,$at){
 				if($arg instance of array(item()?)) then
 					let $is-params := ($is-defn and $at = 4) or ($is-anon and $at = 1)
 					let $is-body := ($is-defn and $at = 6) or ($is-anon and $at = 3)
-(:					let $n := if($is-body) then console:log($arg) else ():)
+					let $tco := if($is-defn) then exists(array:flatten(core:detect-tc($arg,$args(2)))) else false()
+					let $arg :=
+						if($is-defn and $tco) then
+							core:tco($arg,(),$args(2),$args(5))
+						else
+							$arg
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
 					return
@@ -119,7 +123,7 @@ declare function core:process-args($frame,$args){
 										core:process-value($_,map:put($frame,"$at",$at))
 								})
 							else
-								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq,"",$at,if($is-body) then $pre($at - 1) else ())
+								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq,"",$at,if($is-body and not($tco)) then $pre($at - 1) else ())
 								return if($fn-seq = ".") then concat("function($_0) { return ",$ret,";}") else if($is-fn-seq) then $ret else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
@@ -238,7 +242,7 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 					return
 						concat("(",a:fold-left-at($val,"",function($pre,$cur,$at){
 							concat($pre,
-								if($at eq $s) then
+								if($seqtype and $at eq $s) then
 									concat(",&#10;&#13;n.stop($,",substring($seqtype,1,string-length($seqtype) - 1),$cur,"))")
 								else
 									concat(
@@ -256,7 +260,10 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 			else
 				(: if top in this case, expect exports! :)
 				if($top eq false() and $is-body) then
-					concat("n.stop($,",substring($seqtype,1,string-length($seqtype) - 1),$val,"))")
+					if($seqtype) then
+						concat("n.stop($,",substring($seqtype,1,string-length($seqtype) - 1),$val,"))")
+					else
+						$val
 				else
 					$val
 		let $ret := concat($ret,if($ret ne "" and $at > 1 and $is-body = false()) then if($top) then "&#10;&#13;" else ",&#10;&#13;" else "",$val)
@@ -291,6 +298,80 @@ declare function core:hoist($tree){
 		()
 };
 
+declare function core:stop($seqtype,$val){
+	concat("n.stop($,",substring($seqtype,1,string-length($seqtype) - 1),$val,"))")
+};
+
+
+declare function core:cont($val){
+	(: TODO actual params :)
+	concat("n.cont($,",substring($val,7,string-length($val)-1),")")
+};
+
+declare function core:find-tc($a,$name,$pos){
+	for $x at $i in array:flatten($a) return
+		if($x instance of map(xs:string,item()?)) then
+			if($x("name") eq $name) then
+				if($pos) then $pos else $i
+			else
+				core:find-tc($x("args"),$name,$i)
+		else if($x instance of array(item()?)) then
+			core:find-tc($x,$name,$i)
+		else
+			()
+};
+
+declare function core:detect-tc($a,$name){
+	a:for-each($a,function($n){
+		let $ismap := $n instance of map(xs:string,item()?)
+		return
+			if($ismap and $n("name") eq "core:iff") then
+				core:find-tc($n("args"),$name,0)
+			else if($n instance of array(item()?)) then
+				core:detect-tc($n,$name)
+			else
+				if($ismap) then
+					core:detect-tc($n("args"),$name)
+				else
+					()
+	 })
+};
+
+
+declare function core:tco($a,$tc,$name,$type){
+	a:for-each-at($a,function($n,$at){
+		let $ismap := $n instance of map(xs:string,item()?)
+		return
+			if($ismap and $n("name") eq "core:iff") then
+				(: expect 3 args :)
+				let $args := $n("args")
+				let $self := core:find-tc($args,$name,0)
+				let $nu := console:log($self)
+				return
+					map:put($n,"args",core:tco($args,$self,$name,$type))
+			else if($n instance of array(item()?)) then
+				core:tco($n,$tc,$name,$type)
+			else
+				let $n :=
+					if($ismap) then
+						if($name and $n("name") eq $name) then
+							map:put(map:put($n,"args",[$n("args")]),"name","core:cont")
+						else
+							let $nu := console:log($n) return
+							map:put($n,"args",core:tco($n("args"),(),$name,$type))
+					else
+						$n
+				return
+					if($at > 1 and $at ne $tc) then
+						map {
+							"name": "core:stop",
+							"args": [$type,$n]
+						}
+					else
+						$n
+	 })
+};
+
 declare function core:process-value($value,$frame){
 	if($value instance of map(xs:string,item()?)) then
 		let $name := $value("name")
@@ -302,7 +383,8 @@ declare function core:process-value($value,$frame){
 				let $is-type := $local = map:keys($core:typemap)
 				let $is-native := $core:native = $local
 				let $s := if($is-type or $is-native) then $s + 1 else $s
-				let $is-fn := ($local = ("define","define-private") and $s eq 6) or ($local eq "function" and $s eq 4)
+				let $is-defn := $local = ("define","define-private")
+				let $is-fn := ($is-defn and $s eq 6) or ($local eq "function" and $s eq 4)
 				let $frame := map:put($frame,"$caller",concat($name,"#",$s))
 				(:
 				let $hoisted :=
