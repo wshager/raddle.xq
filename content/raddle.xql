@@ -197,6 +197,14 @@ declare function rdl:stringify($a,$params,$top){
 		})
 };
 
+declare function rdl:transpile($tree,$lang,$params){
+    let $module := n:import("../lib/" || $lang || ".xql")
+	let $frame := map:put($params,"$imports",map {
+		"core": $module
+	})
+	return $module("$exports")("core:transpile#2")($tree,$frame)
+};
+
 declare function rdl:exec($query,$params){
 	(: FIXME retrieve default-namespace :)
 	let $core := n:import("../lib/core.xql")
@@ -206,11 +214,7 @@ declare function rdl:exec($query,$params){
 			if($params("$transpile") eq "rdl") then
 				rdl:stringify(rdl:parse($query,$params),$params)
 			else
-				let $module := n:import("../lib/" || $params("$transpile") || ".xql")
-				let $frame := map:put($params,"$imports",map {
-					"core": $module
-				})
-				return $module("$exports")("core:transpile#2")(rdl:parse($query,$params),$frame)
+				rdl:transpile(rdl:parse($query,$params),$params("$transpile"),$params)
 		else
 			let $frame := map:put($params,"$imports",map { "core":$core,"n": $n})
 			return n:eval(rdl:parse($query,$params))($frame)
