@@ -4,6 +4,8 @@ declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
 
 import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.xql";
 import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat.xql";
+import module namespace a="http://raddle.org/array-util" at "/db/apps/raddle.xq/lib/array-util.xql";
+import module namespace console="http://exist-db.org/xquery/console";
 
 
 declare function local:serialize($dict){
@@ -23,27 +25,69 @@ declare function local:normalize($query,$params) {
 	})),$params)
 };
 
+declare function local:find-tc($a,$name,$pos){
+    for $x at $i in array:flatten($a) return
+        if($x instance of map(xs:string,item()?)) then
+            if($x("name") eq $name) then
+                if($pos) then $pos else $i
+            else
+                local:find-tc($x("args"),$name,$i)
+        else
+            ()
+};
 
-let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat" := "xquery"}
+declare function local:wrap($a,$tc,$name){
+    a:for-each-at($a,function($n,$at){
+        let $ismap := $n instance of map(xs:string,item()?)
+        return
+            if($ismap and $n("name") eq "core:iff") then
+                (: expect 3 args :)
+                let $args := $n("args")
+                let $self := local:find-tc($args,$name,0)
+                return
+                    map:put($n,"args",local:wrap($args,$self,$name))
+            else if($n instance of array(item()?)) then
+                local:wrap($n,$tc,$name)
+            else
+                let $n := if($ismap) then
+                    let $n := if($name and $n("name") eq $name) then map:put($n,"name","n:cont") else $n
+                    return
+                        if($n("name") = ("core:define","core:define-private")) then
+                            map:put($n,"args",local:wrap($n("args"),(),$n("args")(2)))
+                        else
+                            $n
+                else
+                    $n
+                return
+                    if($at > 1 and $at ne $tc) then
+                        map {
+                            "name": "n:stop",
+                            "args": [$n]
+                        }
+                    else
+                        $n
+     })
+};
 
-let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/lib/core.xql"), "utf-8")
-(:let $query := 'core:module($,test,test,test),core:define($,test:add,(),(core:integer($,x),core:integer($,y)),core:integer(),(core:integer($,z,$y),n:add($x,$z)))':)
 
-(:let $query := 'declare function core:import($frame,$prefix,$uri,$location){:)
-(:	let $import :=:)
-(:		if(1) then:)
-(:			2:)
-(:		else:)
-(:			let $src := 3:)
-(:			return $src:)
-(:	return $import:)
-(:};':)
 
+let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "js"}
+
+let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/xq-compat.rdl"), "utf-8")
+
+let $query := 'declare function x:fold($a,$b,$c) {
+	if(empty($a)) then
+	    $b
+	else
+	    x:fold(tail($a),$c($b,head($a)),$c)
+};'
 
 (:return local:normalize($query,$params):)
 (:return local:serialize(raddle:parse($query,$params)):)
-(:return raddle:stringify(raddle:parse($query,$params),$params):)
-return xmldb:store("/db/apps/raddle.xq/raddled","core.rdl",raddle:stringify(raddle:parse($query,$params),$params),"text/plain")
+(:return xmldb:store("/db/apps/raddle.xq/js","xq-compat.js",raddle:exec($query,$params),"text/plain"):)
+
+let $rdl := raddle:parse($query,$params)
+return raddle:transpile(local:wrap($rdl,(),()),"js",$params)
 
 (:let $module := raddle:exec($query,$params):)
 (:let $fn := $module("$exports")("test:add#2"):)
