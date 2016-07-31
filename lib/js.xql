@@ -90,6 +90,12 @@ declare %private function core:is-fn-seq($value) {
 		)
 };
 
+declare function core:is-caller($args) {
+	a:fold-left($args,false(),function($pre,$arg) {
+		$pre or ($arg instance of map(xs:string,item()?) and $arg("name") eq "")
+	})
+};
+
 declare function core:process-args($frame,$args){
 	if($frame instance of xs:string) then
 		"n.processArgs($frame,$args)"
@@ -103,10 +109,10 @@ declare function core:process-args($frame,$args){
 				if($arg instance of array(item()?)) then
 					let $is-params := ($is-defn and $at = 4) or ($is-anon and $at = 1)
 					let $is-body := ($is-defn and $at = 6) or ($is-anon and $at = 3)
-					let $tco := if($is-defn) then exists(array:flatten(core:detect-tc($arg,$args(2)))) else false()
+					let $tco := if($is-defn) then core:detect-tc($arg,$args(2)) else false()
 					let $arg :=
 						if($is-defn and $tco) then
-							core:tco($arg,(),$args(2),$args(5))
+							core:tco($arg,$args(2),$args(5))
 						else
 							$arg
 					let $fn-seq := core:is-fn-seq($arg)
@@ -127,11 +133,28 @@ declare function core:process-args($frame,$args){
 								return if($fn-seq = ".") then concat("function($_0) { return ",$ret,";}") else if($is-fn-seq) then $ret else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
-					if($arg("name") eq "" and array:size($pre) > 1) then
-						if($pre($at - 1) instance of array(item()?)) then
-							a:put($pre,$at - 1,array:append($pre($at - 1),$arg))
+					let $nu := if(array:size($args) > $at and core:is-caller(array:subarray($args,$at + 1))) then console:log($arg) else ()
+					let $s := array:size($pre) return
+					if($arg("name") ne "" and array:size($args) > $at and core:is-caller(array:subarray($args,$at + 1))) then
+						array:append($pre,map {
+							"name": "core:call",
+							"args": [$arg("name"),map {
+								"name": "",
+								"args": $arg("args")
+							}]
+						})
+					else if($arg("name") eq "" and  $s > 1) then
+						if($pre($s) instance of map(xs:string,item()?) and $pre($s)("name") eq "core:call") then
+							let $cc := $pre($s)
+							return a:put($pre,$s,map {
+								"name": "core:call",
+								"args": [$cc,map {
+									"name": "",
+									"args": $arg("args")
+								}]
+							})
 						else
-							a:put($pre,$at - 1,[$pre($at - 1),$arg])
+							array:append($pre,core:process-value($arg,$frame))
 					else
 						array:append($pre,core:process-value($arg,$frame))
 				else if($arg eq ".") then
@@ -303,62 +326,140 @@ declare function core:stop($seqtype,$val){
 };
 
 
-declare function core:cont($val){
+declare function core:cont($a){
 	(: TODO actual params :)
-	concat("n.cont($,",substring($val,7,string-length($val)-1),")")
+	concat("n.cont($,",$a,")")
 };
 
-declare function core:find-tc($a,$name,$pos){
-	for $x at $i in array:flatten($a) return
-		if($x instance of map(xs:string,item()?)) then
-			if($x("name") eq $name) then
-				if($pos) then $pos else $i
+
+declare function core:cont($a,$b){
+	concat("n.cont($,",$a,",",$b,")")
+};
+
+declare function core:cont($a,$b,$c){
+	concat("n.cont($,",$a,",",$b,",",$c,")")
+};
+
+declare function core:cont($a,$b,$c,$d){
+	concat("n.cont($,",$a,",",$b,",",$c,",",$d,")")
+};
+
+declare function core:cont($a,$b,$c,$d,$e){
+	concat("n.cont($,",$a,",",$b,",",$c,",",$d,",",$e,")")
+};
+
+declare function core:cont($a,$b,$c,$d,$e,$f){
+	concat("n.cont($,",$a,",",$b,",",$c,",",$d,",",$e,",",$f,")")
+};
+
+declare function core:cont($a,$b,$c,$d,$e,$f,$g){
+	concat("n.cont($,",$a,",",$b,",",$c,",",$d,",",$e,",",$f,",",$g,")")
+};
+
+declare function core:find-tc($a,$name){
+	if($a instance of array(item()?)) then
+		a:fold-left($a,false(),function($pre,$x){
+			if($x instance of map(xs:string,item()?)) then
+				if($x("name") eq $name) then
+					true()
+				else
+					$pre or core:find-tc($x("args"),$name)
+			else if($x instance of array(item()?)) then
+				$pre or core:find-tc($x,$name)
 			else
-				core:find-tc($x("args"),$name,$i)
+				$pre
+		})
+	else if($a instance of map(xs:string,item()?)) then
+		if($a("name") eq $name) then
+			true()
 		else
-			()
+			core:find-tc($a("args"),$name)
+	else
+		false()
 };
 
 declare function core:detect-tc($a,$name){
-	a:for-each($a,function($n){
+	a:fold-left($a,false(),function($pre,$n){
 		let $ismap := $n instance of map(xs:string,item()?)
 		return
 			if($ismap and $n("name") eq "core:iff") then
-				core:find-tc($n("args"),$name,0)
+				$pre or core:find-tc($n("args"),$name)
 			else if($n instance of array(item()?)) then
-				core:detect-tc($n,$name)
+				$pre or core:detect-tc($n,$name)
 			else
 				if($ismap) then
-					core:detect-tc($n("args"),$name)
+					$pre or core:detect-tc($n("args"),$name)
 				else
-					()
+					$pre
 	 })
 };
 
+declare function core:tco($a,$name,$type){
+	core:tco($a,$name,$type,())
+};
 
-declare function core:tco($a,$tc,$name,$type){
+declare function core:tco($a,$name,$type,$stop){
 	a:for-each-at($a,function($n,$at){
-		let $ismap := $n instance of map(xs:string,item()?)
-		return
-			if($ismap and $n("name") eq "core:iff") then
+		if($n instance of map(xs:string,item()?)) then
+			if($n("name") eq $name) then
+				map:put($n,"name","core:cont")
+			else if($n("name") eq "core:iff") then
 				(: expect 3 args :)
+				let $stopped := $stop
 				let $args := $n("args")
-				let $self := core:find-tc($args,$name,0)
+				let $first := core:find-tc($args(2),$name)
+				let $second := if(array:size($args) > 2) then core:find-tc($args(3),$name) else false()
+(:						let $nu := console:log(($first,$second)):)
+				let $stop :=
+					if($first or $second) then
+						if($first and $second) then
+							()
+						else if($first) then 3 else 2
+					else
+						()
+				let $n :=
+					map:put($n,"args",core:tco($args,$name,$type,$stop))
 				return
-					map:put($n,"args",core:tco($args,$self,$name,$type))
-			else if($n instance of array(item()?)) then
-				core:tco($n,$tc,$name,$type)
+					if($stopped eq $at) then
+						map {
+							"name": "core:stop",
+							"args": [$type,$n]
+						}
+					else
+						$n
 			else
-				if($ismap and $name and $n("name") eq $name) then
-					map:put(map:put($n,"args",[$n("args")]),"name","core:cont")
-				else if($at > 1 and $at ne $tc) then
+				let $n := map:put($n,"args", core:tco($n("args"),$name,$type))
+				return if($stop eq $at) then
+						map {
+							"name": "core:stop",
+							"args": [$type,$n]
+						}
+					else
+						$n
+		else if($n instance of array(item()?)) then
+			if($stop eq $at) then
+				if(array:size($n) > 0 and $n(1) instance of map(xs:string,item()?)) then
+					core:tco($n,$name,$type,array:size($n))
+				else
 					map {
 						"name": "core:stop",
 						"args": [$type,$n]
 					}
-				else
-					$n
-	 })
+			else
+				core:tco($n,$name,$type)
+		else
+			if($stop eq $at) then
+				map {
+					"name": "core:stop",
+					"args": [$type,$n]
+				}
+			else
+				$n
+ })
+};
+
+declare function core:call($a,$b) {
+	concat("n.call(",$a,",",$b,")")
 };
 
 declare function core:process-value($value,$frame){
@@ -415,10 +516,10 @@ declare function core:process-value($value,$frame){
 						$args
 				let $args :=
 					a:for-each($args,function($_){
-						if($_ instance of array(item()?) and array:size($_)>1 and $_(2) instance of map(xs:string,item()?) and $_(2)("name") eq "") then
-							core:serialize($_,$frame)
-						else if($_ instance of array(item()?) and not($is-fn)) then
+						if($_ instance of array(item()?) and not($is-fn)) then
 							concat("n.seq(",string-join(array:flatten($_),","),")")
+						else if($_ instance of map(xs:string,item()?) and $_("name") eq "core:call") then
+							core:process-value($_,$frame)
 						else
 							$_
 					})
@@ -433,21 +534,31 @@ declare function core:process-value($value,$frame){
 						function-lookup(QName("http://raddle.org/javascript", "core:native"),$s)
 					else
 						function-lookup(QName("http://raddle.org/javascript", $name),$s)
-				let $n := if(empty($fn)) then console:log(($name,"#",$s)) else ()
+				let $n := if(empty($fn)) then console:log($args) else ()
 				return apply($fn,$args)
 			else if($name eq "") then
-				core:process-args(map:put($frame,"$caller",""),$args)
+				let $args := core:process-args(map:put($frame,"$caller",""),$args)
+				return
+					a:for-each($args,function($_){
+						if($_ instance of array(item()?)) then
+							concat("n.seq(",string-join(array:flatten($_),","),")")
+						else if($_ instance of map(xs:string,item()?) and $_("name") eq "core:call") then
+							core:process-value($_,$frame)
+						else
+							$_
+					})
 			else
 				let $frame := map:put($frame,"$caller",concat($name,"#",$s))
 				let $args := core:process-args($frame,$args)
 				(: FIXME add check for seq calls :)
 				let $ret :=
 					a:fold-left-at($args,"",function($pre,$cur,$at){
-						let $is-seq := $cur instance of array(item()?)
-						return concat($pre,
+						concat($pre,
 							if($at>1) then "," else "",
-							if($is-seq) then
+							if($cur instance of array(item()?)) then
 								concat("n.seq(",string-join(array:flatten($cur),","),")")
+							else if($cur instance of map(xs:string,item()?)) then
+								core:process-value($cur,$frame)
 							else
 								$cur
 						)
@@ -458,11 +569,12 @@ declare function core:process-value($value,$frame){
 						concat("n.call(",core:convert($name,$frame),",",$ret,")")
 					else
 						concat(core:function-name($name,$s,$frame("$prefix"),"fn"),"(",$ret,")")
+	else if($value instance of array(item()?)) then
+		concat("n.seq(",core:process-tree($value,$frame),")")
+	else if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
+		replace($value,"^_","\$_" || $frame("$at"))
 	else
-		if(matches($value,"^_[" || $raddle:suffix || "]?$")) then
-			replace($value,"^_","\$_" || $frame("$at"))
-		else
-			core:serialize($value,$frame)
+		core:serialize($value,$frame)
 };
 
 declare %private function core:is-current-module($frame,$name){
@@ -532,6 +644,13 @@ declare function core:resolve-function($frame,$name,$self){
 
 declare function core:module($frame,$prefix,$ns,$desc) {
 	concat("/*module namespace ", core:clip($prefix), "=", $ns, ";&#10;&#13;",$desc,"*/")
+};
+
+declare function core:namespace($frame,$prefix,$ns) {
+	if($frame instance of xs:string) then
+		"n.namespace($frame,$prefix,$ns)"
+	else
+		concat("//declare namespace ", core:clip($prefix), " = ", $ns)
 };
 
 declare function core:import($frame,$prefix,$ns) {
@@ -613,7 +732,6 @@ declare function core:describe($frame,$name,$def,$args,$type){
 };
 
 declare function core:function($args,$type,$body) {
-	let $n := console:log($args)
 	let $params := a:for-each($args,function($_){
 		if($_ instance of map(xs:string,item()?)) then
 			let $a := array:tail($_("args"))
@@ -720,9 +838,8 @@ declare function core:typegen($type,$frame,$name,$val){
 };
 
 declare function core:typegen($type,$frame,$name,$val,$suffix) {
-	let $n := console:log($name) return
 	if($val) then
-		concat("n.put($,",core:var-name($name),",n.",$type,"(",$val,"))")
+		concat("$=n.put($,",core:var-name($name),",n.",$type,"(",$val,"))")
 	else
 		core:param-name($name) || " /* " || $type || $suffix || " */"
 };
