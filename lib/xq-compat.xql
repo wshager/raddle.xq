@@ -216,8 +216,8 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 		replace($cur,xqc:escape-for-regex($next),if(round($next) eq 22) then concat("$1",xqc:to-op($next),"$2") else concat("$1 ",xqc:op-str($next)," $2"))
 	})
 	let $query := fold-left($xqc:types,$query,function($cur,$next){
-		let $cur := replace($cur,concat("xs:",$next,"\s*([^\(])"),concat("core:",$next,"()$1"))
-		return replace($cur,concat("xs:",$next,"\s*\("),concat("core:",$next,"("))
+		let $cur := replace($cur,concat("xs.",$next,"\s*([^\(])"),concat("core.",$next,"()$1"))
+		return replace($cur,concat("xs.",$next,"\s*\("),concat("core.",$next,"("))
 	})
 	(: prevent = ambiguity :)
 	let $query := replace($query,",","=#1=")
@@ -270,12 +270,12 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 				xqc:as($param,tail($parts),($ret,","),$lastseen,$subtype,$seqtype)
 			else
 				xqc:params(tail($parts),($ret,","),())
-		else if(matches($head,concat("core:[",$xqc:ncname,"]+"))) then
+		else if(matches($head,concat("core.[",$xqc:ncname,"]+"))) then
 			if(matches($next,"^\s*\(\s*$")) then
 				(: complex subtype opener :)
-				xqc:as((),subsequence($parts,3),($ret,$head,"(",$param,",",if($head eq "core:function") then "(" else ""),$lastseen,true(),$seqtype)
+				xqc:as((),subsequence($parts,3),($ret,$head,"(",$param,",",if($head eq "core.function") then "(" else ""),$lastseen,true(),$seqtype)
 			else
-				xqc:as((),tail($parts),($ret,$head,"(",$param,if($head eq "core:function") then ",(" else ""),$lastseen,$subtype,$seqtype)
+				xqc:as((),tail($parts),($ret,$head,"(",$param,if($head eq "core.function") then ",(" else ""),$lastseen,$subtype,$seqtype)
 		else if(matches($head,"[\?\+\*]")) then
 			xqc:as($param,tail($parts),($ret,$head),$lastseen,$subtype,$seqtype)
 		else if(matches($head,"^(\(\))?\s*\)")) then
@@ -285,7 +285,7 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 			else if($non eq 24) then
 				xqc:as((),tail($parts),($ret,if($subtype) then ")" else "","))"),$lastseen,false(),false())
 			else if($non eq 20.06) then
-				xqc:body(tail($parts),($ret,if($subtype) then ")" else "",if(matches($head,"^\(\)")) then ")" else "","),core:item(),"),($lastseen,21.06))
+				xqc:body(tail($parts),($ret,if($subtype) then ")" else "",if(matches($head,"^\(\)")) then ")" else "","),core.item(),"),($lastseen,21.06))
 			else
 				(: what? :)
 				console:log($parts)
@@ -306,14 +306,14 @@ declare function xqc:params($parts,$ret,$lastseen){
 			if($next eq "=#24=") then
 				xqc:as((),tail($parts),($ret,")"),$lastseen,false(),false())
 			else
-				xqc:body(tail($parts),($ret,"),core:item(),"),($lastseen,21.06))
+				xqc:body(tail($parts),($ret,"),core.item(),"),($lastseen,21.06))
 		else if(matches($maybe-param,"=#1=")) then
 			xqc:params(tail($parts),($ret,","),$lastseen)
 		else if(matches($maybe-param,"^\$")) then
 			if($next eq "=#24=") then
 				xqc:as(replace($maybe-param,"^\$","\$,"),subsequence($parts,3),$ret,$lastseen,false(),false())
 			else
-				xqc:params(tail($parts),($ret,"core:item(",replace($maybe-param,"^\$","\$,"),")"),$lastseen)
+				xqc:params(tail($parts),($ret,"core.item(",replace($maybe-param,"^\$","\$,"),")"),$lastseen)
 		else
 			xqc:params(tail($parts),$ret,$lastseen)
 };
@@ -334,7 +334,7 @@ declare function xqc:xvar($parts,$ret){
 };
 
 declare function xqc:xns($parts,$ret){
-    xqc:block(subsequence($parts,4),($ret, "core:namespace($,",$parts[1],",",$parts[3],")"))
+    xqc:block(subsequence($parts,4),($ret, "core.namespace($,",$parts[1],",",$parts[3],")"))
 };
 
 declare function xqc:annot($parts,$ret,$annot){
@@ -346,18 +346,18 @@ declare function xqc:annot($parts,$ret,$annot){
 		else if($maybe-annot = "namespace") then
 		    xqc:xns($rest,$ret)
 		else if($maybe-annot = "=#21#06=") then
-			xqc:xfn($rest,($ret, "core:define", $annot, "($,"))
+			xqc:xfn($rest,($ret, "core.define", $annot, "($,"))
 		else if($maybe-annot = "=#2#18=") then
-			xqc:xvar($rest,($ret, "core:var",$annot, "($,"))
+			xqc:xvar($rest,($ret, "core.var",$annot, "($,"))
 		else $ret
 };
 
 declare function xqc:xversion($parts,$ret){
-	xqc:block(subsequence($parts,3),($ret,"core:xq-version($,",$parts[2]/string(),")"))
+	xqc:block(subsequence($parts,3),($ret,"core.xq-version($,",$parts[2]/string(),")"))
 };
 
 declare function xqc:xmodule($parts,$ret){
-	xqc:block(subsequence($parts,5),($ret,"core:module($,",$parts[2]/string(),",",$parts[4]/string(),",())"))
+	xqc:block(subsequence($parts,5),($ret,"core.module($,",$parts[2]/string(),",",$parts[4]/string(),",())"))
 };
 
 declare function xqc:close($lastseen as xs:decimal*,$no as xs:decimal, $ret as xs:decimal*){
@@ -387,7 +387,7 @@ declare function xqc:pop($a) {
 };
 
 declare function xqc:anon($head,$parts,$ret,$lastseen) {
-	xqc:params($parts,($ret, "core:function(("),$lastseen)
+	xqc:params($parts,($ret, "core.function(("),$lastseen)
 };
 
 declare function xqc:comment($parts,$ret,$lastseen) {
@@ -496,7 +496,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
 				let $closes := subsequence($lastseen,$lastindex,count($lastseen))[. = (2.08,2.11)]
 				(: add one extra closed paren by consing 2.11 :)
-				let $closes := ($closes,2.11)
+				let $closes := if($next eq "=#20#06=") then $closes else ($closes,2.11)
 				let $llast := $lastseen[$lastindex - 1]
 				(: close the opening type UNLESS its another opener :)
 				return concat(
@@ -671,9 +671,9 @@ declare function xqc:ximport($parts,$ret) {
 	let $maybe-at := head($rest)/string()
 	return
 		if(matches($maybe-at,"at")) then
-			xqc:block(subsequence($rest,3),($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
+			xqc:block(subsequence($rest,3),($ret,"core.import($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
 		else
-			xqc:block($rest,($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),")"))
+			xqc:block($rest,($ret,"core.import($,",$parts[3]/string(),",",$parts[5]/string(),")"))
 };
 
 declare function xqc:block($parts,$ret){
@@ -708,14 +708,14 @@ declare function xqc:block($parts,$ret){
 
 declare function xqc:to-op($opnum){
 	if(map:contains($xqc:operator-map,$opnum)) then
-		"core:" || $xqc:operator-map($opnum)
+		"core." || $xqc:operator-map($opnum)
 	else
-		"core:" || replace($xqc:operators($opnum)," ","-")
+		"core." || replace($xqc:operators($opnum)," ","-")
 };
 
 declare function xqc:from-op($op) {
 	let $k := map:keys($xqc:operators-i)
-	let $i := index-of($k,replace($op,"^core:",""))[1]
+	let $i := index-of($k,replace($op,"^core.",""))[1]
 	return xs:decimal($xqc:operators-i($k[$i]))
 };
 
