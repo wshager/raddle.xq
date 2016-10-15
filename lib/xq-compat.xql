@@ -422,7 +422,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			(
 				$ret,
 				string-join((1 to $closer) ! ")"),
-(:				if($lastseen[last() - 1] eq 21.07) then ")),=#20#04=((" else:)
+				if($lastseen[last() - 1] eq 21.07) then "),=#20#04=(" else
 				    ","
 			)
 		return xqc:body($rest,$ret,$lastseen)
@@ -491,7 +491,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 					else ""
 				)
 			else if($no eq 26 or ($no eq 2.10 and $lastseen[last() - 1] eq 21.07)) then
-				":"
+				","
 			else if($no eq 20.07) then
 				let $lastindex := xqc:last-index-of($lastseen,20.06)
 				let $closes := subsequence($lastseen,$lastindex,count($lastseen))[. = (2.08,2.11)]
@@ -499,11 +499,12 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 				let $closes := if($next eq "=#20#06=") then $closes else ($closes,2.11)
 				let $llast := $lastseen[$lastindex - 1]
 				(: close the opening type UNLESS its another opener :)
+				(: ALT leave JSON intact :)
 				return concat(
                     if($llast eq 21.07 or empty($llast) or round($llast) ne 21) then
-						"}"
-					else if(round($llast) eq 21) then
 						")"
+					else if(round($llast) eq 21) then
+						""
 					else
 						"",
 					string-join($closes ! ")"),
@@ -530,8 +531,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret){
 			else if($no eq 20.02) then
 				if($llast eq 20.04) then "))" else ")"
 			else if($no eq 20.06) then
-			    (: leave JSON literal as-is :)
-			    if($llast eq 21.07 or round($llast) ne 21) then "{" else "("
+			    (: ALT leave JSON literal as-is :)
+			    if($llast eq 21.07 or round($llast) ne 21) then "=#20#04=(" else ""
 			else if($no eq 19.01) then
 				xqc:op-str($no) || "("
 			else
