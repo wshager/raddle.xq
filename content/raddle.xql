@@ -12,10 +12,11 @@ declare variable $rdl:ncname := $xqc:ncname;
 
 
 
-declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$:%/#@\^";
+declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$%/#@\^:";
 
-declare variable $rdl:filter-regexp := "(\])|(,)?([^\[\]]*)(\[?)";
-
+(:
+declare variable $rdl:paren-regexp := concat("([\)\]\}][",$rdl:suffix,"]?)|(",$xqc:operator-regexp,"|:,)?([",$rdl:chars,"]*)([\[\{\(]?)");
+:)
 declare variable $rdl:paren-regexp := concat("(\)[",$rdl:suffix,"]?)|(",$xqc:operator-regexp,"|,)?([",$rdl:chars,"]*)(\(?)");
 declare variable $rdl:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 
@@ -44,7 +45,12 @@ declare function rdl:parse($query as xs:string?){
 declare function rdl:parse($query as xs:string?,$params) {
 	rdl:parse-strings(
 		analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*,
-		if($params("$compat") = "xquery") then xqc:normalize-query#2 else rdl:normalize-query#2,
+		if($params("$compat") = "xquery") then
+		    function($query,$params){
+		        rdl:normalize-query(xqc:normalize-query($query,$params),$params)
+		    }
+		else
+		    rdl:normalize-query#2,
 		$params
 	)
 };
