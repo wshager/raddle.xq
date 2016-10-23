@@ -228,7 +228,14 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 	let $query := replace($query,"\s+"," ")
 	(: FIXME consider axes :)
 	let $query := replace($query,"=#19#01=\s*=#20#08=","=#20#08=")
-	let $query := xqc:block(analyze-string($query,"([^\s\(\),\.;]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()],"")
+	let $nu := console:log($query)
+(:	let $query := xqc:block(analyze-string($query,"([^\s\(\),\.;]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()],""):)
+    let $query := string-join(for-each(tokenize($query,";"),function($cur){
+        let $parts := analyze-string($cur,"([^\s\(\),\.]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()]
+        let $nu := console:log($parts)
+        let $ret := xqc:block($parts,"")
+        return if($ret) then $ret else ()
+    }),",")
 	let $query := replace($query,"\s+","")
 	(: TODO check if there are any ops left and either throw or fix :)
 	return $query
@@ -619,7 +626,8 @@ declare function xqc:paren-closer($head,$lastseen){
 
 declare function xqc:body($parts,$ret,$lastseen){
 	if(empty($parts)) then
-		concat($ret, string-join($lastseen[. = (2.08,2.11,20.07)] ! ")"))
+	    let $nu := console:log($lastseen) return
+		concat($ret, string-join($lastseen[. = (2.08,2.11,20.07,2.18)] ! ")"))
 	else
 		let $head := head($parts)/string()
 		let $rest := tail($parts)
@@ -745,7 +753,9 @@ declare function xqc:escape-for-regex($key) as xs:string {
 	let $pre := "(^|[\s,\(\);\[\]]+)"
 	return
 		if(matches($arg,"\p{L}+")) then
-			if($key eq 21.06) then
+			if($key eq 2.17) then
+			    "(\s?|;?)" || $arg || "(\s?)"
+			else if($key eq 21.06) then
 				$pre || $arg || "([\s" || $xqc:ncname || ":]*\s*\((\$|\)))"
 			else if(round($key) eq 21) then
 				$pre || $arg || "([\s\$" || $xqc:ncname || ",:]*=#20#06)"
