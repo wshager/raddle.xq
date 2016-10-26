@@ -232,10 +232,9 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 (:	let $query := xqc:block(analyze-string($query,"([^\s\(\),\.;]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()],""):)
     let $query := string-join(for-each(tokenize($query,";"),function($cur){
         let $parts := analyze-string($cur,"([^\s\(\),\.]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()]
-        let $nu := console:log($parts)
         let $ret := xqc:block($parts,"")
         return if($ret) then $ret else ()
-    }),",")
+    }),";")
 	let $query := replace($query,"\s+","")
 	(: TODO check if there are any ops left and either throw or fix :)
 	return $query
@@ -280,9 +279,9 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 		else if(matches($head,concat("core:[",$xqc:ncname,"]+"))) then
 			if(matches($next,"^\s*\(\s*$")) then
 				(: complex subtype opener :)
-				xqc:as((),subsequence($parts,3),concat($ret,$head,"(",$param,",",if($head eq "core:function") then "(" else ""),$lastseen,true(),$seqtype)
+				xqc:as((),subsequence($parts,3),concat($ret,$head,"(",$param,",",if($head eq "core:anon") then "(" else ""),$lastseen,true(),$seqtype)
 			else
-				xqc:as((),tail($parts),concat($ret,$head,"(",$param,if($head eq "core:function") then ",(" else ""),$lastseen,$subtype,$seqtype)
+				xqc:as((),tail($parts),concat($ret,$head,"(",$param,if($head eq "core:anon") then ",(" else ""),$lastseen,$subtype,$seqtype)
 		else if(matches($head,"[\?\+\*]")) then
 			xqc:as($param,tail($parts),concat($ret,$head),$lastseen,$subtype,$seqtype)
 		else if(matches($head,"^(\(\))?\s*\)")) then
@@ -295,7 +294,7 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 				xqc:body(tail($parts),concat($ret,if($subtype) then ")" else "",if(matches($head,"^\(\)")) then ")" else "","),core:item(),"),($lastseen,21.06))
 			else
 				(: what? :)
-				console:log($parts)
+				console:log(("what",$parts))
 		else
 			(: FIXME check seqtype vs subtype :)
 			(: TODO add default values
@@ -309,7 +308,7 @@ declare function xqc:params($parts,$ret,$lastseen){
 	let $maybe-param := head($parts)/string()
 	let $next := $parts[2]/string()
 	return
-		if(matches($maybe-param,"^(\(\))?\s*\)")) then
+		if(matches($maybe-param,"^\(?\s*\)")) then
 			if($next eq "=#24=") then
 				xqc:as((),tail($parts),concat($ret,")"),$lastseen,false(),false())
 			else
@@ -355,7 +354,7 @@ declare function xqc:annot($parts,$ret,$annot){
 		else if($maybe-annot = "=#21#06=") then
 			xqc:xfn($rest,concat($ret, "core:define", $annot, "($,"))
 		else if($maybe-annot = "=#2#18=") then
-			xqc:xvar($rest,concat($ret, "core:var",$annot, "($,"))
+			xqc:xvar($rest,concat($ret, "core:xvar",$annot, "($,"))
 		else $ret
 };
 
@@ -394,7 +393,7 @@ declare function xqc:pop($a) {
 };
 
 declare function xqc:anon($head,$parts,$ret,$lastseen) {
-	xqc:params($parts,concat($ret, "core:function(("),$lastseen)
+	xqc:params($parts,concat($ret, "core:anon(("),$lastseen)
 };
 
 declare function xqc:comment($parts,$ret,$lastseen) {
@@ -606,7 +605,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
 				xqc:pop($lastseen)
 			else
 				$lastseen
-		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")))
+(:		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))):)
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -626,7 +625,6 @@ declare function xqc:paren-closer($head,$lastseen){
 
 declare function xqc:body($parts,$ret,$lastseen){
 	if(empty($parts)) then
-	    let $nu := console:log($lastseen) return
 		concat($ret, string-join($lastseen[. = (2.08,2.11,20.07,2.18)] ! ")"))
 	else
 		let $head := head($parts)/string()
@@ -636,7 +634,7 @@ declare function xqc:body($parts,$ret,$lastseen){
 			if($head = "=#25#01=") then
 				xqc:comment($rest,$ret,$lastseen)
 			else if(matches($head,";")) then
-				xqc:block($parts, if($lastseen[last()] eq 2.18) then concat($ret,replace($head,";",""),")") else $ret)
+				xqc:block($parts, $ret)
 			else
 				let $next := if(empty($rest)) then () else head($rest)/string()
 				let $non :=
@@ -663,23 +661,15 @@ declare function xqc:body($parts,$ret,$lastseen){
 						$rest
 				(: we look ahead, but there was nothing before... :)
 				let $head :=
-					if(empty($ret) and $head eq "=#20#01=") then
+					if($head eq "=#20#01=" and $ret = "") then
 						"=#20#04="
 					else
 						$head
 				return
 					if(matches($head,$xqc:operator-regexp)) then
 						xqc:body-op(xqc:op-num($head),$next,$lastseen,$rest,$ret)
-		(:			else if(matches($head,"^\$") and matches($head,":")=false()) then:)
-		(:				xqc:body($rest,$lastseen,concat($ret,"_",$params($head)),$params):)
 					else
-(:						let $n := console:log(($head," ::", $lastseen)) return:)
-						xqc:body($rest,
-(:							if(xqc:eq($non,(2.06,2.09,21.06)) and matches($head,",|\(") = false()) then:)
-(:								($ret,$head,","):)
-(:							else:)
-								concat($ret,$head),
-						$lastseen)
+						xqc:body($rest,concat($ret,$head),$lastseen)
 };
 
 declare function xqc:ximport($parts,$ret) {
@@ -687,9 +677,9 @@ declare function xqc:ximport($parts,$ret) {
 	let $maybe-at := head($rest)/string()
 	return
 		if(matches($maybe-at,"at")) then
-			xqc:block(subsequence($rest,3),concat($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
+			xqc:block(subsequence($rest,3),concat($ret,"core:ximport($,",$parts[3]/string(),",",$parts[5]/string(),",",$rest[2]/string(),")"))
 		else
-			xqc:block($rest,concat($ret,"core:import($,",$parts[3]/string(),",",$parts[5]/string(),")"))
+			xqc:block($rest,concat($ret,"core:ximport($,",$parts[3]/string(),",",$parts[5]/string(),")"))
 };
 
 declare function xqc:block($parts,$ret){
@@ -743,6 +733,8 @@ declare function xqc:rename($a,$fn) {
 				"args": xqc:rename($t("args"),$fn),
 				"suffix": $t("suffix")
 			}
+		else if($t instance of array(item()?)) then
+		    xqc:rename($t,$fn)
 		else
 			$t
 	})
@@ -773,7 +765,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 			let $arg := replace($arg,"(\.|\[|\]|\\|\||\-|\^|\$|\?|\*|\+|\{|\}|\(|\))","\\$1")
 			return
 				if($key eq 26) then
-					"(\s?)" || $arg || "(\s*[^\p{L}])"
+					"(\s?)" || $arg || "(\s*[^\p{L}_$])"
 				else if($key eq 2.10) then
 					"(\s?):\s*=([^#])"
 (:				else if($key eq 20.03) then:)
