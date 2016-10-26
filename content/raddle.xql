@@ -14,9 +14,6 @@ declare variable $rdl:ncname := $xqc:ncname;
 
 declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$%/#@\^:";
 
-(:
-declare variable $rdl:paren-regexp := concat("([\)\]\}][",$rdl:suffix,"]?)|(",$xqc:operator-regexp,"|:,)?([",$rdl:chars,"]*)([\[\{\(]?)");
-:)
 declare variable $rdl:paren-regexp := concat("(\)[",$rdl:suffix,"]?)|(",$xqc:operator-regexp,"|,)?([",$rdl:chars,"]*)(\(?)");
 declare variable $rdl:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 
@@ -26,12 +23,23 @@ declare function rdl:map-put($map,$key,$val){
 };
 
 declare function rdl:parse-strings($strings as element()*,$normalizer,$params) {
-	rdl:wrap(analyze-string($normalizer(string-join(for-each(1 to count($strings),function($i){
+    let $string := string-join(for-each(1 to count($strings),function($i){
 		if(name($strings[$i]) eq "match") then
 			"$%" || $i
 		else
 			$strings[$i]/string()
-	})),$params),$rdl:paren-regexp)/fn:match,$strings)
+	}))
+	let $string := $normalizer($string,$params)
+	return array:join(for-each(tokenize($string,";"),function($block){
+	    let $ret := rdl:wrap(analyze-string($block,$rdl:paren-regexp)/fn:match,$strings)
+    	return xqc:rename($ret,function($name){
+    	    let $nu := console:log($name) return
+    		if(matches($name,$xqc:operator-regexp)) then
+    			xqc:to-op(xqc:op-num($name))
+    		else
+    			$name
+    	})
+	}))
 };
 
 declare function rdl:normalize-query($query as xs:string?,$params){
@@ -66,12 +74,14 @@ declare function rdl:get-index-from-tokens($tok) {
 
 declare function rdl:get-index($rest){
 	rdl:get-index-from-tokens(for-each($rest,function($_){
-		if($_/fn:group[@nr=1]) then
-			1
-		else if($_/fn:group[@nr=4]) then
-			-1
-		else
-			0
+	    let $_ := $_/fn:group[./text()]/@nr
+	    return
+    		if($_ = 1) then
+    			1
+    		else if($_ = 4) then
+    			-1
+    		else
+    			0
 	}))[1]
 };
 
@@ -90,7 +100,7 @@ declare function rdl:value-from-strings($val as xs:string?,$strings) {
 declare function rdl:append-or-nest($next,$strings,$group,$ret,$suffix){
 	let $x :=
 		if($group[@nr=3]) then
-			map { "name" := rdl:value-from-strings($group[@nr=3]/string(),$strings), "args" := rdl:wrap($next,$strings), "suffix" := $suffix}
+			 map { "name" := rdl:value-from-strings($group[@nr=3]/string(),$strings), "args" := rdl:wrap($next,$strings), "suffix" := $suffix}
 		else
 			rdl:wrap($next,$strings)
 	return
@@ -140,7 +150,7 @@ declare function rdl:wrap-open-paren($rest,$strings,$index,$group,$ret){
 
 declare function rdl:wrap($rest,$strings,$ret,$group){
 	if(exists($rest)) then
-		if($group[@nr=4]) then
+		if($group[@nr=4 and text()]) then
 			rdl:wrap-open-paren($rest,$strings,rdl:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or matches($group[@nr=2]/string(),$xqc:operator-regexp || "+|,")) then
 			rdl:wrap($rest,$strings,rdl:append-prop-or-value($group[@nr=3]/string(),$group[@nr=2]/string(),$strings,$ret))
@@ -155,12 +165,7 @@ declare function rdl:wrap($match,$strings,$ret){
 };
 
 declare function rdl:wrap($match,$strings){
-	xqc:rename(rdl:wrap($match,$strings,[]),function($name){
-		if(matches($name,$xqc:operator-regexp)) then
-			xqc:to-op(xqc:op-num($name))
-		else
-			$name
-	})
+	rdl:wrap($match,$strings,[])
 };
 
 declare function rdl:import-module($name,$params){
@@ -208,7 +213,8 @@ declare function rdl:transpile($tree,$lang,$params){
 	let $frame := map:put($params,"$imports",map {
 		"core": $module
 	})
-	return $module("$exports")("core:transpile#2")($tree,$frame)
+	let $func := $module("$exports")("core:transpile#2")
+	return $func($tree,$frame)
 };
 
 declare function rdl:exec($query,$params){
