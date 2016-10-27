@@ -228,7 +228,6 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 	let $query := replace($query,"\s+"," ")
 	(: FIXME consider axes :)
 	let $query := replace($query,"=#19#01=\s*=#20#08=","=#20#08=")
-	let $nu := console:log($query)
 (:	let $query := xqc:block(analyze-string($query,"([^\s\(\),\.;]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()],""):)
     let $query := string-join(for-each(tokenize($query,";"),function($cur){
         let $parts := analyze-string($cur,"([^\s\(\),\.]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()]
@@ -765,7 +764,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 			let $arg := replace($arg,"(\.|\[|\]|\\|\||\-|\^|\$|\?|\*|\+|\{|\}|\(|\))","\\$1")
 			return
 				if($key eq 26) then
-					"(\s?)" || $arg || "(\s*[^\p{L}_$])"
+					"(\s?)" || $arg || "(\s*[^\p{L}_])"
 				else if($key eq 2.10) then
 					"(\s?):\s*=([^#])"
 (:				else if($key eq 20.03) then:)
