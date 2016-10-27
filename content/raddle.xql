@@ -10,8 +10,6 @@ import module namespace console="http://exist-db.org/xquery/console";
 declare variable $rdl:suffix := "\+\*\-\?";
 declare variable $rdl:ncname := $xqc:ncname;
 
-
-
 declare variable $rdl:chars := $rdl:suffix || $rdl:ncname || "\$%/#@\^:";
 
 declare variable $rdl:paren-regexp := concat("(\)[",$rdl:suffix,"]?)|(",$xqc:operator-regexp,"|,)?([",$rdl:chars,"]*)(\(?)");
@@ -32,13 +30,12 @@ declare function rdl:parse-strings($strings as element()*,$normalizer,$params) {
 	let $string := $normalizer($string,$params)
 	return array:join(for-each(tokenize($string,";"),function($block){
 	    let $ret := rdl:wrap(analyze-string($block,$rdl:paren-regexp)/fn:match,$strings)
-    	return xqc:rename($ret,function($name){
-    	    let $nu := console:log($name) return
-    		if(matches($name,$xqc:operator-regexp)) then
-    			xqc:to-op(xqc:op-num($name))
-    		else
-    			$name
-    	})
+	    return xqc:rename($ret,function($name){
+		if(matches($name,$xqc:operator-regexp)) then
+			xqc:to-op(xqc:op-num($name))
+		else
+			$name
+	    })
 	}))
 };
 
@@ -65,16 +62,19 @@ declare function rdl:parse($query as xs:string?,$params) {
 
 declare function rdl:get-index-from-tokens($tok) {
 	for-each(1 to count(index-of($tok,1)),function($i){
-		if(exists(index-of($tok,-1)[$i]) and index-of($tok,-1)[$i] < index-of($tok,1)[$i]) then
-			()
-		else
-			index-of($tok,1)[$i]+1
+	    let $x := index-of($tok,-1)[$i]
+	    let $y := index-of($tok,1)[$i]
+	    return
+    		if(exists($x) and $x < $y) then
+    			()
+    		else
+    			$y + 1
 	})
 };
 
 declare function rdl:get-index($rest){
 	rdl:get-index-from-tokens(for-each($rest,function($_){
-	    let $_ := $_/fn:group[./text()]/@nr
+	    let $_ := $_/fn:group/@nr
 	    return
     		if($_ = 1) then
     			1
@@ -150,7 +150,7 @@ declare function rdl:wrap-open-paren($rest,$strings,$index,$group,$ret){
 
 declare function rdl:wrap($rest,$strings,$ret,$group){
 	if(exists($rest)) then
-		if($group[@nr=4 and text()]) then
+		if($group[@nr=4]) then
 			rdl:wrap-open-paren($rest,$strings,rdl:get-index($rest),$group,$ret)
 		else if($group[@nr=3] or matches($group[@nr=2]/string(),$xqc:operator-regexp || "+|,")) then
 			rdl:wrap($rest,$strings,rdl:append-prop-or-value($group[@nr=3]/string(),$group[@nr=2]/string(),$strings,$ret))
@@ -228,6 +228,24 @@ declare function rdl:exec($query,$params){
 			else
 				rdl:transpile(rdl:parse($query,$params),$params("$transpile"),$params)
 		else
-			let $frame := map:put($params,"$imports",map { "core":$core,"n": $n})
-			return n:eval(rdl:parse($query,$params))($frame)
+			let $frame := map:put($params,"$imports",map { "core": $core, "n": $n})
+			let $fn := n:eval(rdl:parse($query,$params))
+			return $fn($frame)
+};
+
+declare function rdl:clip($name){
+	if(matches($name,"^&quot;.*&quot;$")) then rdl:clip-string($name) else $name
+};
+
+declare function rdl:camel-case($name){
+	let $p := tokenize($name,"\-")
+	return head($p) || string-join(for-each(tail($p),function($_){
+		let $c := string-to-codepoints($_)
+		return concat(upper-case(codepoints-to-string(head($c))),codepoints-to-string(tail($c)))
+	}))
+};
+
+declare function rdl:capitalize($str){
+	let $cp := string-to-codepoints($str)
+	return codepoints-to-string((string-to-codepoints(upper-case(codepoints-to-string(head($cp)))),tail($cp)))
 };
