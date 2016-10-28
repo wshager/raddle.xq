@@ -21,8 +21,8 @@ declare variable $core:typemap := map {
 };
 
 declare variable $core:native-ops := (
-	"or",
-	"and",
+(:	"or",:)
+(:	"and",:)
 	"eq",
 	"ne",
 	"lt",
@@ -64,6 +64,14 @@ declare function core:xq-version($frame,$version){
 	"/* xquery version " || $version || " */"
 };
 
+declare function core:and($a,$b){
+    concat("$.test(",$a,") &amp;&amp; $.test(",$b,")")
+};
+
+declare function core:or($a,$b){
+    concat("$.test(",$a,") || $.test(",$b,")")
+};
+
 declare %private function core:is-fn-seq($value) {
 	if($value instance of xs:string) then
 	    concat("isFnSeq(",$value,")")
@@ -101,19 +109,13 @@ declare function core:process-args($frame,$args){
 		let $is-init := matches($name,"^core:init")
 		let $is-defn := $name = ("core:define-private#6","core:define#6")
 		let $is-anon := $name eq "core:anon#4"
+		let $is-iff := $name eq "core:iff#3"
 		let $is-typegen := matches($name,"^core:(typegen|" || string-join(map:keys($core:typemap),"|") || ")")
 		return
 			a:fold-left-at($args,[],function($pre,$arg,$at){
 				if($arg instance of array(item()?)) then
 					let $is-params := ($is-defn and $at = 4) or ($is-anon and $at = 1)
 					let $is-body := ($is-defn and $at = 6) or ($is-anon and $at = 3)
-(:					let $tco := if($is-defn) then core:detect-tc($frame("$tree"),$arg,$args(2),$args(2)) else ():)
-(:                    let $nu := if($is-defn and $args(2) eq "xqc:body-op") then console:log($tco) else ():)
-(:					let $arg :=:)
-(:						if($is-defn and $tco) then:)
-(:							core:tco($arg,$tco,$args(5)):)
-(:						else:)
-(:							$arg:)
 					let $fn-seq := core:is-fn-seq($arg)
 					let $is-fn-seq := count($fn-seq) > 0
 					return
@@ -128,8 +130,16 @@ declare function core:process-args($frame,$args){
 										core:process-value($_,map:put($frame,"$at",$at))
 								})
 							else
-								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq,"",$at,if($is-body (:and not($tco):)) then $pre($at - 1) else ())
-								return if($fn-seq = ".") then concat("function($_0) { return ",$ret,";}") else if($is-fn-seq) then $ret else $ret
+								let $ret := core:process-tree($arg, $frame, $is-body and $is-fn-seq,"",$at,
+								    if($is-body) then
+								        $pre($at - 1)
+								    else
+								        ()
+								)
+								return if($fn-seq = ".") then
+								    concat("function($_0) { return ",$ret,";}")
+								else
+								    if($is-fn-seq) then $ret else $ret
 						)
 				else if($arg instance of map(xs:string,item()?)) then
 					let $s := array:size($pre)
@@ -299,7 +309,6 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 		let $is-seq := $val instance of array(item()?)
 		let $val :=
 			if($is-seq) then
-(:				if($top) then:)
 					let $s := array:size($val)
 					(: assume this is a let-return seq :)
 					return
@@ -317,9 +326,6 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 									)
 							)
 						}),")")
-(:				else:)
-(:					let $n := console:log(($frame("$caller")," || ",$val)) return:)
-(:					core:serialize($val,$frame):)
 			else
 				(: if top in this case, expect exports! :)
 				if($top eq false() and $is-body) then
@@ -329,7 +335,13 @@ declare function core:process-tree($tree,$frame,$top,$ret,$at,$seqtype){
 						$val
 				else
 					$val
-		let $ret := concat($ret,if($ret ne "" and $at > 1 and $is-body = false()) then if($top) then "&#10;&#13;" else ",&#10;&#13;" else "",$val)
+		let $nu := console:log($val)
+		let $ret := concat(
+		    $ret,
+		    if($ret ne "" and $at > 1 and $is-body = false()) then
+		        if($top) then "&#10;&#13;" else ",&#10;&#13;"
+		    else "",
+		    $val)
 		return core:process-tree(array:tail($tree),$frame,$top,$ret,$at + 1,())
 	else if($at = 1) then
 		"n.seq()"
@@ -490,6 +502,7 @@ declare function core:convert($string,$frame){
 		return
 			if(count($parts) eq 1) then
 				concat("$.get(&quot;",replace($parts,"^\$",""),"&quot;)")
+(:                $parts:)
 			else if(matches($parts[1],concat("^\$?",$frame("$prefix")))) then
 				replace($parts[last()],"\$","")
 			else
@@ -677,11 +690,8 @@ declare function core:anon($args,$type,$body) {
         )
 };
 
-
-
 declare function core:iff($a,$b,$c){
-    concat("$.test(",$a,") ?&#13; (",$b,") :&#13; (",$c,")")
-(:	concat("($ => { if($) {&#13;",$b,"&#13;} else {&#13; ",$c,"&#13;} })(n.test(",$a,"))"):)
+	concat("($$ = $.test(",$a,"),&#13;$$ => { if($$) {&#13;return ",$b,";&#13;} else {&#13;return ",$c,";&#13;} })($$)")
 };
 
 declare function core:typegen1($type,$seq) {
@@ -725,7 +735,7 @@ declare function core:typegen2($type,$seq) {
 
 declare function core:_typegen($args){
     if($args instance of xs:string) then
-        "n._typegen($args)"
+        concat("n._typegen(",$args,")")
     else
         let $l := array:size($args)
         return
