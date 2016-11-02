@@ -392,7 +392,7 @@ declare function xqc:pop($a) {
 };
 
 declare function xqc:anon($head,$parts,$ret,$lastseen) {
-	xqc:params($parts,concat($ret, "core:anon(("),$lastseen)
+	xqc:params($parts,concat($ret, "core:anon($,("),$lastseen)
 };
 
 declare function xqc:comment($parts,$ret,$lastseen) {
