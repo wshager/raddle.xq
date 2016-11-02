@@ -605,7 +605,7 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
 			else if($no eq 20.06 or round($no) = 21) then
 				($lastseen,$no)
 			else if($no = (19.01,20.01)) then
-			    ($lastseen,$no)
+			    if($llast = 19.01) then $lastseen else ($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
