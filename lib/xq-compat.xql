@@ -4,7 +4,7 @@ module namespace xqc="http://raddle.org/xquery-compat";
 
 import module namespace console="http://exist-db.org/xquery/console";
 
-declare variable $xqc:ncname := "\p{L}\p{N}\-_\.";
+declare variable $xqc:ncname := "\p{L}\p{N}\-_\.@";
 declare variable $xqc:qname := "[" || $xqc:ncname || "]*:?" || "[" || $xqc:ncname || "]+";
 declare variable $xqc:operator-regexp := "=#\p{N}+#?\p{N}*=";
 
@@ -77,15 +77,15 @@ declare variable $xqc:operators := map {
 	17.02: "-",
 	18: "!",
 	19.01: "/",
-	19.02: "//",
-	19.03: "/*",
+(:	19.02: "//",:)
+(:	19.03: "/*",:)
 	20.01: "[",
 	20.02: "]",
 	20.03: "?",
 	20.04: "[",
 	20.06: "{",
 	20.07: "}",
-	20.08: "@",
+(:	20.08: "@",:)
 	21.01: "array",
 	21.02: "attribute",
 	21.03: "comment",
@@ -196,7 +196,7 @@ declare variable $xqc:operator-map := map {
 	17.02: "minus",
 	18: "for-each",
 	19.01: "select",
-	19.02: "select-all",
+(:	19.02: "select-deep",:)
 	20.01: "filter",
 	20.03: "lookup",
 	20.04: "array",
@@ -227,7 +227,7 @@ declare function xqc:normalize-query($query as xs:string?,$params) {
 	let $query := replace($query,"(" || $xqc:operator-regexp || ")"," $1 ")
 	let $query := replace($query,"\s+"," ")
 	(: FIXME consider axes :)
-	let $query := replace($query,"=#19#01=\s*=#20#08=","=#20#08=")
+	let $query := replace($query,"=#19#01=\s*=#19#01=","=#19#01= descendant::")
 (:	let $query := xqc:block(analyze-string($query,"([^\s\(\),\.;]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()],""):)
     let $query := string-join(for-each(tokenize($query,";"),function($cur){
         let $parts := analyze-string($cur,"([^\s\(\),\.]+)")/*[name(.) = fn:match or matches(string(.),"^\s*$") = false()]
@@ -406,22 +406,9 @@ declare function xqc:comment($parts,$ret,$lastseen) {
 };
 
 declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
-    let $llast := $lastseen[last()]
-	let $ret :=
-		if($llast eq 19.01) then
-			concat($ret,")")
-		else
-			$ret
-	let $lastseen :=
-		if($llast eq 19.01) then
-			xqc:pop($lastseen)
-		else
-			$lastseen
-	return
-	if($no eq 1) then
-		let $old := $lastseen
+    if($no eq 1) then
 		(: FIXME dont close a sequence :)
-		let $closer :=xqc:closer(reverse($lastseen),0)
+		let $closer := xqc:closer(reverse($lastseen),0)
 		let $lastseen := subsequence($lastseen,1,count($lastseen) - $closer)
 		let $ret :=
 			concat(
@@ -456,6 +443,23 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
 		let $old := $lastseen
 		let $llast := $lastseen[last()]
 		(: FIXME add check for nested last :)
+		let $ret := concat($ret,
+		    if($llast = 19.01) then
+			    if($no = (19.01,20.01)) then
+			        ","
+			    else
+			        ")"
+			else
+			    "")
+		let $lastseen :=
+		    if($llast eq 19.01) then
+		        if($no = (19.01,20.01)) then
+		            $lastseen
+		        else
+		            xqc:pop($lastseen)
+		    else
+		        $lastseen
+		let $llast := $lastseen[last()]
 		let $positional := $no eq 20.01 and $next and ((matches($next,"^([\+\-]?(\p{N}+))$|^\$[" || $xqc:ncname|| "]+$") and $rest[2] eq "=#20#02=") or matches($next,"(fn:)?last"))
 		let $hascomma := matches($ret,",$")
 		let $letopener := $no eq 2.09 and (
@@ -545,8 +549,8 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
 			        if(empty($next) or $next eq "=#20#07=") then "(" else "(=#27#01=("
 		        else
 		            "("
-			else if($no eq 19.01) then
-				xqc:op-str($no) || "("
+			else if($no = 19.01) then
+			    if($llast eq 19.01) then "" else xqc:op-str($no) || "("
 			else
 				xqc:op-str($no)
 		)
@@ -598,13 +602,15 @@ declare function xqc:body-op($no,$next,$lastseen,$rest,$ret as xs:string){
 				return ($lastseen,$no)
 (:			else if($no eq 20.06 and ($llast eq 21.07 or empty($llast) or round($llast) ne 21)) then:)
 (:				xqc:pop($lastseen):)
-			else if($no eq 20.06 or round($no) eq 21 or $no eq 19.01) then
+			else if($no eq 20.06 or round($no) = 21) then
 				($lastseen,$no)
+			else if($no = (19.01,20.01)) then
+			    ($lastseen,$no)
 			else if($no eq 20.02) then
 				xqc:pop($lastseen)
 			else
 				$lastseen
-(:		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let"))):)
+		let $nu := console:log(($no," :: ",string-join($old,","),"->",string-join($lastseen,",")," || ",replace(replace($ret,"=#2#06=","if"),"=#2#09=","let")))
 		return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -624,7 +630,7 @@ declare function xqc:paren-closer($head,$lastseen){
 
 declare function xqc:body($parts,$ret,$lastseen){
 	if(empty($parts)) then
-		concat($ret, string-join($lastseen[. = (2.08,2.11,20.07,2.18)] ! ")"))
+		concat($ret, string-join($lastseen[. = (2.08,2.11,20.07,2.18,19.01)] ! ")"))
 	else
 		let $head := head($parts)/string()
 		let $rest := tail($parts)
@@ -770,7 +776,7 @@ declare function xqc:escape-for-regex($key) as xs:string {
 (:				else if($key eq 20.03) then:)
 (:					"(\s?)" || $arg || "(\s*[" || $xqc:ncname || "\(]+)":)
 				else if($key = (8.02,17.02)) then
-					$pre || $arg || "([\s\p{N}])?"
+					"(\s|[^\p{L}]\p{N}+)" || $arg || "([\s\p{N}])?"
 				else if($key = (8.01,9.01,20.03)) then
 					"([^/])" || $arg || "(\s*[^,\)\{])"
 				else
