@@ -33,7 +33,7 @@ declare function a:fold-right-at($array as array(item()?),$zero,$function,$at){
 	if(array:size($array) eq 0) then
 		$zero
 	else
-		$function( array:head($array), a:fold-right-at(array:tail($array), $zero, $function, $at + 1) )
+	    $function( array:head($array), a:fold-right-at(array:tail($array), $zero, $function, $at + 1) )
 };
 
 declare function a:for-each($array as array(item()?),$function){
@@ -56,4 +56,12 @@ declare function a:for-each-at($array as array(item()?),$function,$ret,$at){
 		$ret
 	else
 		a:for-each-at(array:tail($array), $function, array:append($ret,$function(array:head($array), $at)), $at + 1)
+};
+
+declare function a:last($array as array(item()?)) {
+    array:head(array:reverse($array))
+};
+
+declare function a:pop($array as array(item()?)) {
+    array:tail(array:reverse($array))
 };
