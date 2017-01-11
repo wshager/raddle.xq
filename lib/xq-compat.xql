@@ -488,8 +488,8 @@ declare function xqc:op-close-curly($rest,$ret,$lastseen) {
 	let $lastindex := xqc:last-index-of($lastseen,20.06)
 	let $closes := subsequence($lastseen,$lastindex,count($lastseen))[. = (2.08,2.11)]
 	(: add one extra closed paren by consing 2.11 :)
-	let $next := head($rest)/string()
-	let $closes := if($next eq "=#20#06=") then $closes else ($closes,2.11)
+	let $reopen := head($rest)/string() eq "=#20#06="
+	let $closes := if($reopen) then $closes else ($closes,2.11)
 	let $llast := $lastseen[$lastindex - 1]
 	(: close the opening type UNLESS its another opener :)
 	(: ALT leave JSON intact :)
@@ -504,7 +504,7 @@ declare function xqc:op-close-curly($rest,$ret,$lastseen) {
 		else
 		    "",
 		string-join($closes ! ")"),
-		if($next eq "=#20#06=") then
+		if($reopen) then
 			","
 		else
 		    ""
@@ -512,7 +512,7 @@ declare function xqc:op-close-curly($rest,$ret,$lastseen) {
 	(: eat up until 20.06 :)
 	let $lastseen := subsequence($lastseen,1,xqc:last-index-of($lastseen,20.06) - 1)
 	(: remove opening type UNLESS next is another opener :)
-	let $lastseen := if(round($lastseen[last()]) eq 21 and head($rest)/string() eq "=#20#06=") then $lastseen else xqc:pop($lastseen)
+	let $lastseen := if(round($lastseen[last()]) eq 21 and $reopen) then $lastseen else xqc:pop($lastseen)
 	return xqc:body($rest,$ret,$lastseen)
 };
 
@@ -756,7 +756,8 @@ declare function xqc:body($parts,$ret,$lastseen){
 						$head
 				return
 					if(matches($head,$xqc:operator-regexp)) then
-						xqc:body-op(xqc:op-num($head),$rest,$ret,$lastseen)
+						let $n := console:log((xqc:op-num($head)," || ",string-join($lastseen,",")," || ",$ret))
+						return xqc:body-op(xqc:op-num($head),$rest,$ret,$lastseen)
 					else
 						xqc:body($rest,concat($ret,$head),if(matches($head,"\(")) then $lastseen else ($lastseen,0))
 };
