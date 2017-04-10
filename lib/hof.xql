@@ -35,7 +35,7 @@ declare function hof:group-by($in,$grouper,$processor) {
         map:new(),
         function($map, $init, $transformer){
             let $val := head($init)
-            let $key := $transformer($val)
+            let $key := string-join($transformer($val),"|")
             return
                 map:put($map,$key,
                     if(map:contains($map,$key)) then
