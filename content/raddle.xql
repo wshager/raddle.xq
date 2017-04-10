@@ -4,8 +4,7 @@ module namespace rdl="http://raddle.org/raddle";
 import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat.xql";
 import module namespace n="http://raddle.org/native-xq" at "../lib/n.xql";
 import module namespace a="http://raddle.org/array-util" at "../lib/array-util.xql";
-
-import module namespace console="http://exist-db.org/xquery/console";
+import module namespace env="http://raddle.org/env" at "../lib/env.xql";
 
 declare variable $rdl:suffix := "\+\*\-\?";
 declare variable $rdl:ncname := $xqc:ncname;
@@ -17,7 +16,7 @@ declare variable $rdl:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file
 
 declare variable $rdl:operators := map {
 	3: "|",
-	4: "&amp;",
+	4: $env:AMP,
 	5.01: "=eq=",
 	5.02: "=ne=",
 	5.03: "=lt=",
@@ -110,7 +109,7 @@ declare variable $rdl:operator-map := map {
 };
 
 declare function rdl:map-put($map,$key,$val){
-	map:new(($map,map {$key : $val}))
+	map:merge(($map,map {$key : $val}))
 };
 
 declare function rdl:parse-strings($strings,$normalizer,$params) {
@@ -140,7 +139,7 @@ declare function rdl:process-strings($strings,$ret,$index) {
                 let $string := $head/string()
                 let $index := if(map:contains($ret,$string)) then $index else $index + 1
                 let $key := "$%" || $index
-                let $ret := map:put($ret, $key, concat("&quot;",rdl:clip-string($string),"&quot;"))
+                let $ret := map:put($ret, $key, concat($env:QUOT,rdl:clip-string($string),$env:QUOT))
                 let $ret := map:put($ret,"$%0",concat($ret("$%0"),$key))
                 return rdl:process-strings(tail($strings),$ret,$index)
             else
@@ -154,16 +153,21 @@ declare function rdl:parse($query as xs:string?){
 
 declare function rdl:parse($query as xs:string?,$params) {
     let $params := if(matches($query,"^\s*xquery\s+version")) then map:put($params,"$compat","xquery") else $params
-    let $strings := rdl:process-strings(analyze-string($query,"('[^']*')|(&quot;[^&quot;]*&quot;)")/*,map { "$%0" : "" } , 1)
+    let $strings := rdl:process-strings(analyze-string($query,concat("('[^']*')|(",$env:QUOT,"[^",$env:QUOT,"]*",$env:QUOT,")"))/*,map { "$%0" : "" } , 1)
     let $params :=
         if($params("$compat") eq "xquery") then
             map:put(map:put($params,"$operators",$xqc:operators),"$operator-map",$xqc:operator-map)
-        else
+        else if($params("$compat") eq "rql") then
             map:put(map:put($params,"$operators",$rdl:operators),"$operator-map",$rdl:operator-map)
+        else
+            $params
 	return
     	rdl:parse-strings(
     		$strings,
-	        xqc:normalize-query#2,
+    		if($params("$compat") eq "") then
+    		    rdl:normalize-query#2
+    		else
+	            xqc:normalize-query#2,
     		$params
     	)
 };
@@ -315,7 +319,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
                     	            return a:put($ret,$depth,$dest)
                                 else if($preceeds) then
                                     let $args := array:insert-before($args,1,$last("args")(2))
-                                    let $dest := a:put($dest,$len,map:new(($last,map {
+                                    let $dest := a:put($dest,$len,map:merge(($last,map {
                                         "args" := [$last("args")(1),map { "name" := $operator, "args" := $args, "suffix" := "", "op" := $op }],
                                         "nest" := true()
                                     })))
@@ -531,7 +535,7 @@ declare function rdl:stringify($a,$params,$top){
 			return concat($acc,
 			    if($i gt 1) then
 		            if($top) then
-		                ";&#10;&#13;"
+		                concat(";",$env:LF)
 		            else if($is-map and $t("call")) then
 			            ""
 			        else
@@ -541,33 +545,8 @@ declare function rdl:stringify($a,$params,$top){
 		})
 };
 
-declare function rdl:transpile($tree,$lang,$params){
-    let $module := n:import("../lib/" || $lang || ".xql")
-	let $frame := map:put($params,"$imports",map {
-		"core": $module
-	})
-	let $func := $module("$exports")("core:transpile#2")
-	return $func($tree,$frame)
-};
-
-declare function rdl:exec($query,$params){
-	(: FIXME retrieve default-namespace :)
-	let $core := n:import("../lib/core.xql")
-	let $n := n:import("../lib/n.xql")
-	return
-		if(map:contains($params,"$transpile")) then
-			if($params("$transpile") eq "rdl") then
-				rdl:stringify(rdl:parse($query,$params),$params)
-			else
-				rdl:transpile(rdl:parse($query,$params),$params("$transpile"),$params)
-		else
-			let $frame := map:put($params,"$imports",map { "core": $core, "n": $n})
-			let $fn := n:eval(rdl:parse($query,$params))
-			return $fn($frame)
-};
-
 declare function rdl:clip($name){
-	if(matches($name,"^&quot;.*&quot;$")) then rdl:clip-string($name) else $name
+	if(matches($name,concat("^",$env:QUOT,".*",$env:QUOT,"$"))) then rdl:clip-string($name) else $name
 };
 
 declare function rdl:camel-case($name){
