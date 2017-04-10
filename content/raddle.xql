@@ -1,8 +1,7 @@
 xquery version "3.1";
 
 module namespace rdl="http://raddle.org/raddle";
-import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat.xql";
-import module namespace n="http://raddle.org/native-xq" at "../lib/n.xql";
+import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat-b.xql";
 import module namespace a="http://raddle.org/array-util" at "../lib/array-util.xql";
 import module namespace env="http://raddle.org/env" at "../lib/env.xql";
 
@@ -15,97 +14,97 @@ declare variable $rdl:paren-regexp := concat("(\)[",$rdl:suffix,"]?)|(",$xqc:ope
 declare variable $rdl:protocol-regexp := "^((http[s]?|ftp|xmldb|xmldb:exist|file):/)?/*(.*)$";
 
 declare variable $rdl:operators := map {
-	3: "|",
-	4: $env:AMP,
-	5.01: "=eq=",
-	5.02: "=ne=",
-	5.03: "=lt=",
-	5.04: "=le=",
-	5.05: "=gt=",
-	5.06: "=ge=",
-	5.07: "=",
-	5.08: "!=",
-	5.09: "=<==",
-	5.10: "=>==",
-	5.11: "=<<=",
-	5.12: "=>>=",
-	5.13: "=<=",
-	5.14: "=>=",
-	6: "||",
-	8.01: "+",
-	8.02: "-",
-	9.01: "*",
-	9.02: "idiv",
-	9.03: "div",
-	9.04: "mod",
-	17.01: "+",
-	17.02: "-",
-	18: "!",
-	20.01: "[",
-	20.02: "]",
-	20.04: "[",
-	20.06: "{",
-	20.07: "}",
-	21.01: "array",
-	21.02: "attribute",
-	21.03: "comment",
-	21.04: "document",
-	21.05: "element",
-	21.06: "function",
-	21.07: "map",
-	21.08: "namespace",
-	21.09: "processing-instruction",
-	21.10: "text",
-	22.01: "array",
-	22.02: "attribute",
-	22.03: "comment",
-	22.04: "document-node",
-	22.05: "element",
-	22.06: "empty-sequence",
-	22.07: "function",
-	22.08: "item",
-	22.09: "map",
-	22.10: "namespace-node",
-	22.11: "node",
-	22.12: "processing-instruction",
-	22.13: "schema-attribute",
-	22.14: "schema-element",
-	22.15: "text",
-	25.01: "(:",
-	25.02: ":)",
-	26: ":"
+	300: "|",
+	400: $env:AMP,
+	501: "=eq=",
+	502: "=ne=",
+	503: "=lt=",
+	504: "=le=",
+	505: "=gt=",
+	506: "=ge=",
+	507: "=",
+	508: "!=",
+	509: "=<==",
+	510: "=>==",
+	511: "=<<=",
+	512: "=>>=",
+	513: "=<=",
+	514: "=>=",
+	600: "||",
+	801: "+",
+	802: "-",
+	901: "*",
+	902: "idiv",
+	903: "div",
+	904: "mod",
+	1701: "+",
+	1702: "-",
+	1800: "!",
+	2001: "[",
+	2002: "]",
+	2004: "[",
+	2006: "{",
+	2007: "}",
+	2101: "array",
+	2102: "attribute",
+	2103: "comment",
+	2104: "document",
+	2105: "element",
+	2106: "function",
+	2107: "map",
+	2108: "namespace",
+	2109: "processing-instruction",
+	2110: "text",
+	2201: "array",
+	2202: "attribute",
+	2203: "comment",
+	2204: "document-node",
+	2205: "element",
+	2206: "empty-sequence",
+	2207: "function",
+	2208: "item",
+	2209: "map",
+	2210: "namespace-node",
+	2211: "node",
+	2212: "processing-instruction",
+	2213: "schema-attribute",
+	2214: "schema-element",
+	2215: "text",
+	2501: "(:",
+	2502: ":)",
+	2600: ":"
 };
 
 declare variable $rdl:operator-map := map {
-	3:"or",
-	4:"and",
-	5.01: "eq",
-	5.02: "ne",
-	5.03: "lt",
-	5.04: "le",
-	5.05: "gt",
-	5.06: "ge",
-	5.07: "geq",
-	5.08: "gne",
-	5.09: "gle",
-	5.10: "gge",
-	5.11: "precedes",
-	5.12: "follows",
-	5.13: "glt",
-	5.14: "ggt",
-	6: "concat",
-	8.01: "add",
-	8.02: "subtract",
-	9.01: "multiply",
-	10.02: "union",
-	17.01: "plus",
-	17.02: "minus",
-	18: "for-each",
-	19.01: "select",
-	20.01: "filter",
-	20.03: "lookup",
-	20.04: "array",
-	27.01: "pair"
+	300:"or",
+	400:"and",
+	501: "eq",
+	502: "ne",
+	503: "lt",
+	504: "le",
+	505: "gt",
+	506: "ge",
+	507: "geq",
+	508: "gne",
+	509: "gle",
+	510: "gge",
+	511: "precedes",
+	512: "follows",
+	513: "glt",
+	514: "ggt",
+	600: "concat",
+	801: "add",
+	802: "subtract",
+	901: "multiply",
+	1002: "union",
+	1701: "plus",
+	1702: "minus",
+	1800: "for-each",
+	1901: "select",
+	2001: "filter",
+	2003: "lookup",
+	2004: "array",
+	2701: "pair"
 };
 
 declare function rdl:map-put($map,$key,$val){
@@ -130,7 +129,7 @@ declare function rdl:normalize-query($query as xs:string?,$params){
 };
 
 declare function rdl:process-strings($strings,$ret,$index) {
-    if(empty($strings)) then
+    if(count($strings) eq 0) then
         $ret
     else
         let $head := head($strings)
@@ -276,7 +275,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
 	    let $op := if($is-op) then xqc:op-num($separator) else ()
 		return if($group/@nr = 4) then
 		    (: if operator, the remainder should be wrapped around ret, depending on operator precedence :)
-		    let $ret :=
+		    let $ret := 
     		    if($is-comma) then
     		        rdl:upsert($ret,$depth,map { "name" := $value, "args" := [], "suffix" := ""})
     		    else if($is-op) then
@@ -284,7 +283,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
     		        let $dest := if(array:size($ret) lt $depth) then [] else $ret($depth)
     		        let $len := array:size($dest)
     				let $last := if($len gt 0) then $dest($len) else ()
-    				let $filter := $op eq 20.01
+    				let $filter := $op eq 2001
     				let $filter-context :=
     				    if($filter and $depth gt 1) then
         				    let $prev := $ret($depth - 1)
@@ -292,18 +291,18 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
         				    return $prev($s)
     				    else
     				        ()
-    				let $select-filter := $filter-context instance of map(xs:string,item()?) and $filter-context("op") eq 19.01
+    				let $select-filter := $filter-context instance of map(xs:string,item()?) and $filter-context("op") eq 1901
                     return
                         if($op = $xqc:lr-op or ($filter and $select-filter eq false())) then
-                            let $args := if($op = (19.01,20.01) and $value eq "") then [] else [map {"name" := $value,"args" := [], "suffix" := ""}]
-                            let $prev-op :=
-                                if($last instance of map(xs:string,item()?) and map:contains($last,"op")) then
+                            let $args := if($op = (1901,2001) and $value eq "") then [] else [map {"name" := $value,"args" := [], "suffix" := ""}]
+                            let $prev-op := 
+                                if($last instance of map(xs:string,item()?) and map:contains($last,"op")) then 
                                     $last("op")
                                 else
                                     ()
                             let $has-preceding-op := exists($prev-op) and $prev-op = $xqc:lr-op
-                            let $is-unary-op :=
-            				    if(round($op) = (8,17)) then
+                            let $is-unary-op := 
+            				    if($op idiv 100 = (8,17)) then
             				        $was-comma or $has-preceding-op
         				        else
         				            false()
@@ -351,14 +350,14 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
     		            let $dest := $ret($depth)
                         let $len := array:size($dest)
         				let $last := $dest($len)
-        				let $prev-op :=
-                            if($last instance of map(xs:string,item()?) and map:contains($last,"op")) then
+        				let $prev-op := 
+                            if($last instance of map(xs:string,item()?) and map:contains($last,"op")) then 
                                 $last("op")
                             else
                                 ()
         				let $has-preceding-op := exists($prev-op) and $prev-op = $xqc:lr-op
-    	                let $is-unary-op :=
-        				    if(round($op) = (8,17)) then
+    	                let $is-unary-op := 
+        				    if($op idiv 100 = (8,17)) then
         				        $was-comma or $has-preceding-op
     				        else
     				            false()
@@ -369,7 +368,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
                     		else
                     			$op
                     	let $operator := xqc:to-op($op,$params)
-                    	let $dest :=
+                    	let $dest := 
                     	    if($is-unary-op) then
                     	        let $args :=
                     				if($value ne "") then
@@ -412,7 +411,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
         		        return a:put($ret,$depth - 1, $dest)
         		    else
         		        $ret
-		        return rdl:wrap($rest,$strings,$params,$ret,$depth - 1)
+		        return rdl:wrap($rest,$strings,$params,$ret,$depth - 1) 
 		    else
 	            let $args := $ret($depth)
 	            let $dest := $ret($depth - 1)
@@ -426,7 +425,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
 	                if($nest) then
 	                    let $ns := array:size($next("args"))
     		            let $maybeseq := if($ns gt 0) then $next("args")($ns) else ()
-    		            let $is-seq := $maybeseq instance of map(xs:string,item()?) and $op ne 19.01 and map:contains($maybeseq,"op") eq false()
+    		            let $is-seq := $maybeseq instance of map(xs:string,item()?) and $op ne 1901 and map:contains($maybeseq,"op") eq false()
     		            return
     		                if($is-seq) then
     		                    a:put($next("args"),$ns,map:put($maybeseq,"args",array:join(($maybeseq("args"),$args))))
@@ -441,7 +440,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
 	            TODO: check for axis::qname
 	            :)
 	            let $args :=
-	                if($op eq 19.01) then
+	                if($op eq 1901) then
 	                    array:for-each($args,function($_){
 	                        if($_ instance of map(xs:string,item()?)) then
 	                            if($_("name") eq "") then
@@ -453,16 +452,16 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
 	                        else
 	                            $_
 	                    })
-	                else if($op eq 20.01) then
+	                else if($op eq 2001) then
 	                    let $is-implicit := array:size($args) eq 1
-	                    let $first :=
+	                    let $first := 
 	                        if($is-implicit) then
 	                            "."
 	                        else
 	                            let $first := $args(1)
 	                            return
                                     if(rdl:find-context-item([$first]) = ".") then $first else rdl:wrap-qname([$first])(1)
-
+                        
                         let $second :=
                             if($is-implicit) then
                                 $args(1)
@@ -480,7 +479,7 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
                         }
                         let $second :=
                             map {
-                                "name" := "",
+                                "name" := "", 
                                 "args" := [$second],
                                 "suffix" := ""
                             }
@@ -497,23 +496,6 @@ declare function rdl:wrap($match,$strings,$params,$ret,$depth,$was-comma){
 		        return rdl:wrap($rest,$strings,$params,array:append(array:subarray($ret,1,$depth - 2),$dest),$depth - 1)
 		else
 	        $ret(1)
-};
-
-declare function rdl:import-module($name,$params){
-	let $mappath :=
-		if(map:contains($params,"modules")) then
-			$params("modules")
-		else
-			"modules.xml"
-	let $map := doc($mappath)/root/module
-	let $location := xs:anyURI($map[@name = $name]/@location)
-	let $uri := xs:anyURI($map[@name = $name]/@uri)
-	let $module :=
-		if($location) then
-			inspect:inspect-module($location)
-		else
-			inspect:inspect-module-uri($uri)
-	return n:try(util:import-module(xs:anyURI($module/@uri), $module/@prefix, xs:anyURI($module/@location)),())
 };
 
 declare function rdl:stringify($a,$params){
