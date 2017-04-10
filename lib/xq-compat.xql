@@ -10,15 +10,6 @@ declare variable $xqc:qname := "^(\p{L}|@)[" || $xqc:ncname || "]*:?" || "[" || 
 declare variable $xqc:operator-regexp := "=#\p{N}+#?\p{N}*=";
 
 declare variable $xqc:operators := map {
-	(:
-	CompDocConstructor
-	| CompElemConstructor
-	| CompAttrConstructor
-	| CompNamespaceConstructor
-	| CompTextConstructor
-	| CompCommentConstructor
-	| CompPIConstructor
-	:)
 	1: ",",
 	2.01: "some",
 	2.02: "every",
@@ -329,7 +320,7 @@ declare function xqc:as($param,$parts,$ret,$lastseen,$subtype,$seqtype){
 				xqc:body(tail($parts),concat($ret,if($subtype) then ")" else "",if(matches($head,"^\(\)")) then ")" else "","),core:item(),"),array:append($lastseen,21.06))
 			else
 				(: what? :)
-				console:log(("what",$parts))
+				(("what",$parts))
 		else
 			(: FIXME check seqtype vs subtype :)
 			(: TODO add default values
@@ -872,11 +863,9 @@ declare function xqc:escape-for-regex($key,$params) as xs:string {
 			let $arg := replace($arg,"(\.|\[|\]|\\|\||\-|\^|\$|\?|\*|\+|\{|\}|\(|\))","\\$1")
 			return
 				if($key eq 26) then
-					"(\s?)" || $arg || "(\s*[^\p{L}_])"
+					"(\s?)" || $arg || "([^=]\s*[^\p{L}_])"
 				else if($key eq 2.10) then
 					"(\s?):\s*=([^#])"
-(:				else if($key eq 20.03) then:)
-(:					"(\s?)" || $arg || "(\s*[" || $xqc:ncname || "\(]+)":)
 				else if($key = (8.02,17.02)) then
 					"(^|\s|[^\p{L}\p{N}]\p{N}+|[\(\)\.,])" || $arg || "([\s\p{N}])?"
 				else if($key = (8.01,9.01,20.03)) then
