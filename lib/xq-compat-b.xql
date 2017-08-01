@@ -1014,7 +1014,7 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                             "r": array:append($ret,xqc:tpl(3,$d,","))
                         }
                 else if($v eq 211) then
-                    (: close anything that needs to be closed :)
+                    (: TODO close anything that needs to be closed in $o:)
                     let $o :=
                         if($has-op and $ocur("v") eq 210) then
                             a:pop($o)
