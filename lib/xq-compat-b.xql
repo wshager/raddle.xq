@@ -9,8 +9,9 @@ import module namespace dawg="http://lagua.nl/dawg" at "../lib/dawg.xql";
 
 declare variable $xqc:ncform := "\p{L}\p{N}\-_";
 declare variable $xqc:ncname := concat("^[",$xqc:ncform,"]");
-declare variable $xqc:qname := "^(:?[^\p{N}\-])[" || $xqc:ncform || "]*:?" || "[" || $xqc:ncform || "]*$";
-declare variable $xqc:var-qname := concat("^\$[",$xqc:ncform,"]*:?[",$xqc:ncform,"]+$");
+declare variable $xqc:qform := concat("[",$xqc:ncform,"]*:?[",$xqc:ncform,"]+");
+declare variable $xqc:qname := concat("^",$xqc:qform,"$");
+declare variable $xqc:var-qname := concat("^\$",$xqc:qform,"$");
 declare variable $xqc:operator-regexp := "=#\p{N}+=";
 
 declare variable $xqc:operators as map(xs:integer, xs:string) := map {
