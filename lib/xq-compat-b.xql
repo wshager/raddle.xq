@@ -938,13 +938,13 @@ declare function xqc:unwrap($cur,$ret,$d,$o,$i){
             let $v := $cur("v")
             let $ret :=
                 if($is-ass) then
-                    array:append($ret,xqc:tpl(3,$d,","))
+                    array:append(array:append($ret,xqc:tpl(2,$d,")")),xqc:tpl(3,$d - 1,","))
                 else
                     array:append($ret,xqc:tpl($t,$d,$v))
             return
                 map {
                     "r": $ret,
-                    "d": $d,
+                    "d": if($is-ass) then $d - 1 else $d,
                     "o": if($is-ass) then a:pop($o) else $o,
                     "i": map:put($i, $d, array:size($ret))
                 }
@@ -975,15 +975,16 @@ declare function xqc:rtp($r as array(*),$d as xs:integer,$o as array(*),$i as ma
                 else
                     map {}
         let $o := a:pop($o)
+        let $noclose := $ocur("t") eq 4 and $ocur("v") = (217,218,209)
         let $r :=
-            if($ocur("t") eq 4 and $ocur("v") = (217,218,209)) then
+            if($noclose) then
                 $r
             else
                 array:append($r,xqc:tpl(2,$d,")"))
         let $r := if(exists($tpl)) then fold-left($tpl,$r,array:append#2) else $r
         return
             map {
-                "d": $d - 1,
+                "d": if($noclose) then $d else $d - 1,
                 "o": if(exists($new-op)) then array:append($o, $new-op) else $o,
                 "i": if(exists($tpl)) then map:put($i, $tpl[1]("d"), array:size($r)) else $i,
                 "r": $r
