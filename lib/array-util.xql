@@ -4,7 +4,10 @@ module namespace a="http://raddle.org/array-util";
 import module namespace console="http://exist-db.org/xquery/console";
 
 declare function a:put($array as array(item()?),$position,$member) {
-	array:insert-before(array:remove($array, $position),$position,$member)
+    if($position gt array:size($array)) then
+        array:append($array,$member)
+    else
+	    array:insert-before(array:remove($array, $position),$position,$member)
 };
 
 declare function a:fold-left($array as array(item()?),$zero,$function){
