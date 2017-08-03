@@ -761,6 +761,7 @@ declare function xqc:inspect-buf($c,$acc,$tmp,$first,$ahead,$lastseen,$forward,$
 };
 
 (:
+semicolon = 0
 open := 1;
 close := 2;
 comma := 3;
@@ -775,8 +776,9 @@ unknown := 9;
 declare function xqc:inspect-buf2($s,$params){
     if($s eq "") then
         ()
-    else
-    if(matches($s,"^[\(\[\{]$")) then
+    else if(matches($s,"^;$")) then
+        map { "t" : 0, "v" : $s}
+    else if(matches($s,"^[\(\[\{]$")) then
         map { "t" : 1, "v" : $s}
     else if(matches($s,"^[\)\]\}]$")) then
         map { "t" : 2, "v" : $s}
@@ -911,8 +913,10 @@ declare function xqc:insrt($ret,$pos,$ins) {
     array:join((fold-left($ins,array:subarray($ret,1,$pos),array:append#2),array:subarray($ret,$pos + 1)))
 };
 
-declare function xqc:incr($entry){
-    map:put($entry,"d",$entry("d") + 1)
+declare function xqc:incr($a){
+    array:for-each($a,function($entry){
+        map:put($entry,"d",$entry("d") + 1)
+    })
 };
 
 declare function xqc:decr($entry){
@@ -923,182 +927,175 @@ declare function xqc:tpl($t,$d,$v){
     map { "t": $t, "d": $d, "v": $v }
 };
 
+declare function xqc:unwrap($cur,$ret,$d,$o,$i){
+    let $osize := array:size($o)
+    let $ocur := if($osize gt 0) then $o($osize) else map {}
+    let $is-ass := $cur("t") eq 4 and $cur("v") eq 211 and $cur("d") eq $ocur("d") and $ocur("t") eq 4 and $ocur("v") eq 210
+    let $nu := console:log(("unwrap: ",$d, " o: ",$ocur, $is-ass))
+    return
+        if($osize eq 0 or $ocur("d") gt $d or $is-ass) then
+            let $t := $cur("t")
+            let $v := $cur("v")
+            let $ret :=
+                if($is-ass) then
+                    array:append($ret,xqc:tpl(3,$d,","))
+                else
+                    array:append($ret,xqc:tpl($t,$d,$v))
+            return
+                map {
+                    "r": $ret,
+                    "d": $d,
+                    "o": if($is-ass) then a:pop($o) else $o,
+                    "i": map:put($i, $d, array:size($ret))
+                }
+        else
+            xqc:unwrap($cur, array:append($ret,xqc:tpl(2,$d,")")), $d - 1, a:pop($o), map:put($i, $d, array:size($ret)))
+};
+
+
+declare function xqc:rtp($r,$d,$o,$i) {
+    xqc:rtp($r,$d,$o,$i,())
+};
+
+declare function xqc:rtp($r,$d,$o,$i,$tpl) {
+    xqc:rtp($r,$d,$o,$i,$tpl,false())
+};
+
+declare function xqc:rtp($r,$d,$o,$i,$tpl,$remove-op) {
+    xqc:rtp($r,$d,$o,$i,$tpl,$remove-op,())
+};
+
+declare function xqc:rtp($r as array(*),$d as xs:integer,$o as array(*),$i as map(*),$tpl as map(*)*,$remove-op as xs:boolean?,$new-op as map(*)?){
+    if($remove-op) then
+        let $ocur :=
+            let $osize := array:size($o)
+            return
+                if($osize gt 0) then
+                    $o($osize)
+                else
+                    map {}
+        let $o := a:pop($o)
+        let $r :=
+            if($ocur("t") eq 4 and $ocur("v") = (217,218,209)) then
+                $r
+            else
+                array:append($r,xqc:tpl(2,$d,")"))
+        let $r := if(exists($tpl)) then fold-left($tpl,$r,array:append#2) else $r
+        return
+            map {
+                "d": $d - 1,
+                "o": if(exists($new-op)) then array:append($o, $new-op) else $o,
+                "i": if(exists($tpl)) then map:put($i, $tpl[1]("d"), array:size($r)) else $i,
+                "r": $r
+            }
+    else
+        let $r := if(exists($tpl)) then fold-left($tpl,$r,array:append#2) else $r
+        return
+            map {
+                "d": $d,
+                "o": if(exists($new-op)) then array:append($o, $new-op) else $o,
+                "i": if(exists($tpl)) then map:put($i, $tpl[1]("d"), array:size($r)) else $i,
+                "r": $r
+            }
+};
+
 (:
  : Process:
  : - denote depth: increase/decrease for opener/closer
  : - never look ahead, only denote open operators
- : - TODO only append what is processed!
- : - detect operator: namespace-assigner, binary or unary (TODO detect + transform namespace declarations)
+ : - only append what is processed!
+ : - detect operator: binary or unary
+ : TODO detect + transform namespace declarations: if *at* is found, stack it to o, remove last paren and write out comma
  : - transform operator to prefix notation
- : -
  :)
 
-declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer, $o as array(*)){
+declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer, $o as array(*), $i as map(*)){
         let $nu := console:log(("cur: ",$cur))
         let $size := array:size($ret)
         let $t := $cur("t")
         let $v := $cur("v")
         let $osize := array:size($o)
-        let $ocur := if($osize gt 0) then $o($osize) else ()
-        let $has-op := $osize gt 0 and $ocur("t") eq 4
-        let $has-pre-op := ($osize gt 0 and $ocur("v") >= 300 and $ocur("v") < 1900)
+        let $ocur := if($osize gt 0) then $o($osize) else map {}
+        let $has-op := $ocur("t") eq 4
+        let $has-pre-op := $has-op and $ocur("v") >= 300 and $ocur("v") < 1900
         return
-            if($t eq 1) then
-                map {
-                    "d": $d + 1,
-                    "o": $o,
-                    "r": array:append($ret,xqc:tpl($t,$d,$v))
-                }
+            if($t eq 0) then
+                xqc:unwrap($cur,$ret,$d,$o,$i)
+            else if($t eq 1) then
+                (: detect function qname, may be too intricate :)
+                let $prev := $ret($size)
+                let $ret :=
+                    if(($prev("t") eq 6 or $v eq "{") and $has-op and $ocur("v") eq 2106) then
+                        array:append($ret,xqc:tpl(3,$d,","))
+                    else
+                        $ret
+                return
+                    xqc:rtp($ret,$d + 1,$o,$i,xqc:tpl($t,$d,"("))
             else if($t eq 2) then
-                map {
-                    "d": $d - 1,
-                    "o": $o,
-                    "r": array:append($ret,xqc:tpl($t,$d,$v))
-                }
+                (: close else :)
+                xqc:rtp($ret,$d - 1,$o,$i,xqc:tpl($t,$d,")"),$has-op and $ocur("v") eq 208 and $ocur("d") eq $d)
             else if($t eq 4) then
                 if($v eq 217) then
-                    let $o := array:append($o, xqc:tpl($t,$d,$v))
-                    return
-                        map {
-                            "d": $d,
-                            "o": $o,
-                            "r": $ret
-                        }
+                    xqc:rtp($ret,$d,$o,$i,(),(),xqc:tpl($t,$d,$v))
                 else if($v eq 218) then
                     (: TODO check if o contains declare (would it not?) :)
-                    let $o := a:put($o, $osize, xqc:tpl($t,$d,$v))
-                    let $ret := array:append($ret,xqc:tpl(10,$d,"$"))
-                    let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                    return
-                        map {
-                            "d": $d + 1,
-                            "o": $o,
-                            "r": $ret
-                        }
+                    xqc:rtp($ret,$d + 1, $o, $i, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")))
                 else if($v eq 2106) then
                     (: TODO check if o contains declare (would it not?) :)
-                    let $o := a:put($o, $osize, xqc:tpl($t,$d,$v))
-                    let $ret := array:append($ret,xqc:tpl(10,$d,"$"))
-                    let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                    return
-                        map {
-                            "d": $d + 1,
-                            "o": $o,
-                            "r": $ret
-                        }
+                    xqc:rtp($ret,$d + 1, $o, $i, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")),$has-op and $ocur("v") eq 217,xqc:tpl($t,$d,$v))
+                else if($v eq 2400) then
+                    xqc:rtp($ret,$d, $o, $i, xqc:tpl(10,$d,","))
+                else if($v eq 207) then
+                    (: remove closing paren for if :)
+                    xqc:rtp(a:pop($ret),$d + 1,$o,$i,xqc:tpl(3,$d,","))
+                else if($v eq 208) then
+                    xqc:rtp($ret,$d,$o,$i,xqc:tpl(3,$d,","),$has-pre-op,xqc:tpl($t,$d,$v))
                 else if($v eq 209) then
                     (: TODO check if o contains something that prevents creating a new let-ret-seq :)
-                    let $o := array:append($o, xqc:tpl($t,$d,$v))
-                    let $ret := array:append($ret,xqc:tpl(10,$d,"$"))
-                    let $ret := array:append($ret,xqc:tpl(1,$d,"("))
                     (: remove entry :)
-                    return
-                        map {
-                            "d": $d + 1,
-                            "o": $o,
-                            "r": $ret
-                        }
+                    xqc:rtp($ret,$d + 1, $o, $i, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")),(),xqc:tpl($t,$d,$v))
                 else if($v eq 210) then
                     (: remove let, variable or comma from o :)
-                    let $nu := console:log($o)
-                    let $o :=
-                        if($has-op and $ocur("v") = (218, 209)) then
-                            a:pop($o)
-                        else
-                            $o
-                    let $o := array:append($o,xqc:tpl($t,$d,$v))
-                    return
-                        map {
-                            "d": $d,
-                            "o": $o,
-                            "r": array:append($ret,xqc:tpl(3,$d,","))
-                        }
+                    xqc:rtp($ret,$d,$o,$i,xqc:tpl(3,$d,","),$has-op and $ocur("v") = (218, 209),xqc:tpl($t,$d,$v))
                 else if($v eq 211) then
-                    (: TODO close anything that needs to be closed in $o:)
-                    let $o :=
-                        if($has-op and $ocur("v") eq 210) then
-                            a:pop($o)
-                        else
-                            $o
-                    let $o := array:append($o,xqc:tpl($t,$d,$v))
-                    return
-                        map {
-                            "d": $d,
-                            "o": $o,
-                            "r": array:append($ret,xqc:tpl(3,$d,","))
-                        }
+                    (: close anything that needs to be closed in $o:)
+                    xqc:unwrap(xqc:tpl($t,$d,$v),$ret,$d,$o,$i)
+                else if($v eq 220) then
+                    (: close anything that needs to be closed in $o:)
+                    xqc:rtp($ret,$d,$o,$i,xqc:tpl(3,$d,","))
                 else if($v >= 300 and $v < 1000) then
                     if($size eq 0) then
                         (: nothing before, so op must be unary :)
                         let $nu := console:log(("un-op: ",$v))
                         (: unary-op: insert op + parens :)
-                        let $v := $v + 900
-                        return
-                            let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                            let $o := a:put($o, $osize, xqc:tpl($t,$d,$v))
-                            return map {
-                                "d": $d + 1,
-                                "o": $o,
-                                "r": array:append($ret,$o)
-                            }
+                        let $cur := xqc:tpl($t,$d,$v + 900)
+                        return xqc:rtp($ret,$d + 1, $o, $i, ($cur,xqc:tpl(1,$d,"(")),(),$cur)
                     else
-                        let $ns-ass :=
-                            if($v eq 507 and $size gt 2) then
-                                let $pprev := $ret($size - 2)
-                                return $pprev("t") eq 4 and $pprev("v") eq 2108
-                            else
-                                false()
+                        let $nu := console:log(("bin-op: ",$v))
+                        let $prev := $ret($size)
+                        let $preceding-op := if($has-pre-op) then $ocur("v") lt $v else false()
                         return
-                            if($ns-ass) then
-                                map {
-                                    "d": $d,
-                                    "o": $o,
-                                    "r": array:append($ret,xqc:tpl($t,$d,$v))
-                                }
+                            if($v = (801,901) and $prev("t") = (1,6)) then
+                                (: these operators are occurrence indicators when the previous is an open paren or qname :)
+                                (: when the previous is a closed paren, it depends what the next will be :)
+                                xqc:rtp($ret,$d,$o,$i,xqc:tpl($t,$d,$xqc:operators($v)))
+                            else if($v = (801,802) and $prev("t") = (1,3,4)) then
+                                let $cur := xqc:tpl($t,$d,$v + 900)
+                                return xqc:rtp($ret,$d + 1, $o, $i, ($cur,xqc:tpl(1,$d,"(")), (), $cur)
                             else
-                                let $nu := console:log(("bin-op: ",$v))
-                                (: bin-op: pull in prev, add parens :)
-                                let $prev := $ret($size)
-                                let $una-op := $prev("t") = (1,3,4)
-                                let $preceding-op := if($has-pre-op) then $ocur("v") lt $v else false()
-                                let $nu := console:log($prev)
-                                return
-                                    if($una-op) then
-                                        let $cur := xqc:tpl($t,$d,$v + 900)
-                                        let $ret := array:append($ret,$cur)
-                                        let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                                        let $o := a:put($o,$osize,$cur)
-                                        return
-                                            map {
-                                                "d": $d + 1,
-                                                "o": $o,
-                                                "r": $ret
-                                            }
-                                    else
-                                        let $cur := xqc:tpl($t,$d,$v)
-                                        let $ret := array:append($ret,$cur)
-                                        let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                                        let $ret := array:append($ret,xqc:incr($prev))
-                                        let $ret := array:append($ret,xqc:tpl(3,$d + 1,","))
-                                        let $o := a:put($o,$osize,$cur)
-                                        return
-                                            map {
-                                                "d": $d + 1,
-                                                "o": $o,
-                                                "r": $ret
-                                            }
+                                (: bin-op: pull in left side, add parens :)
+                                let $cur := xqc:tpl($t,$d,$v)
+                                let $split := $i($d)
+                                let $left := xqc:incr(array:subarray($ret,$split))
+(:                                let $nu := console:log(("left: ",$left)):)
+                                let $ret := array:subarray($ret,1,$split - 1)
+                                let $ret := array:append($ret,$cur)
+                                let $i := map:put($i, $d, array:size($ret))
+                                let $ret := array:append($ret,xqc:tpl(1,$d,"("))
+                                let $ret := array:join(($ret,$left))
+                                return xqc:rtp($ret,$d + 1, $o, $i, xqc:tpl(3,$d + 1,","), (), $cur)
                     else
-                        let $nu := console:log(("some op: ",$v,",",$has-pre-op))
-                        let $ret := if($has-pre-op) then array:append($ret,xqc:tpl(2,$d,")")) else $ret
-                        let $d := if($has-pre-op) then $d - 1 else $d
-                        let $o := if($has-pre-op) then a:pop($o) else $o
-                        let $ret := array:append($ret,xqc:tpl($t,$d,$v))
-                        return
-                            map {
-                                "d": $d,
-                                "o": $o,
-                                "r": $ret
-                            }
+                        xqc:rtp($ret,$d,$o,$i,xqc:tpl($t,$d,$v),$has-pre-op)
             else if($t eq 5) then
                 let $nu := console:log($ocur)
                 let $v :=
@@ -1106,34 +1103,29 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                         replace($v,"^\$","")
                     else
                         $v
-                return
-                    map {
-                        "d": $d,
-                        "o": $o,
-                        "r": array:append($ret,xqc:tpl($t,$d,$v))
-                    }
+                return xqc:rtp($ret,$d,$o,$i,xqc:tpl($t,$d,$v))
             else
-                map {
-                    "d": $d,
-                    "o": $o,
-                    "r": array:append($ret,xqc:tpl($t,$d,$v))
-                }
+                xqc:rtp($ret,$d,$o,$i,xqc:tpl($t,$d,$v))
 };
 
 declare variable $xqc:token-re := concat("([%\p{N}\p{L}",$xqc:block-chars,"]?)([",$xqc:block-chars,"]|[",$xqc:stop-chars,"]+)([\$%\p{N}\p{L}",$xqc:block-chars,"]?)");
 
 declare function xqc:prepare-tokens($part){
-    $part
-    ! replace(.,$xqc:token-re,"$1 $2 $3")
-    ! replace(.,":([%\p{N}])"," : $1")
-    ! replace(.,": =",":=")
-    ! replace(.,"(group|instance|treat|cast|castable)\s+(by|of|as)","$1-$2")
-    ! replace(.,concat("([",$xqc:block-chars,"])([^\s])|([^\s])([",$xqc:block-chars,"])"),"$1 $2")
-    ! replace(.,concat("(\s\p{N}+)(\-)([^\s])|([",$xqc:block-chars,$xqc:stop-chars,"]+)(\-)([^\s])"),"$1 $2 $3")
-    ! tokenize(.,"\s+")
+    if(empty($part) or matches($part,"^\s*$")) then
+        ()
+    else
+        $part
+        ! replace(.,$xqc:token-re,"$1 $2 $3")
+        ! replace(.,":([%\p{N}])"," : $1")
+        ! replace(.,": =",":=")
+        ! replace(.,"(group|instance|treat|cast|castable)\s+(by|of|as)","$1-$2")
+        ! replace(.,concat("([",$xqc:block-chars,"])([^\s])|([^\s])([",$xqc:block-chars,"])"),"$1 $2")
+        ! replace(.,concat("(\s\p{N}+)(\-)([^\s])|([",$xqc:block-chars,$xqc:stop-chars,"]+)(\-)([^\s])"),"$1 $2 $3")
+        ! concat(., " ;")
+        ! tokenize(.,"\s+")
 };
 
-declare function xqc:wrap-depth($parts as xs:string*,$ret as array(*),$depth as xs:integer,$o as array(*),$params as map(*)){
+declare function xqc:wrap-depth($parts as xs:string*,$ret as array(*),$depth as xs:integer,$o as array(*),$i as map(*),$params as map(*)){
     if(empty($parts)) then
         $ret
     else
@@ -1142,24 +1134,29 @@ declare function xqc:wrap-depth($parts as xs:string*,$ret as array(*),$depth as 
                 xqc:inspect-buf2(head($parts),$params)
             else
                 ()
-        let $nu := console:log(("out: ",$out))
+(:        let $nu := console:log(("out: ",$out)):)
         let $tmp := fold-left($out, map {
             "r": $ret,
             "d": $depth,
-            "o": $o
+            "o": $o,
+            "i": $i
         }, function($pre,$cur){
             if(exists($cur)) then
-                let $tmp := xqc:process($cur,$pre("r"),$pre("d"),$pre("o"))
+                let $tmp := xqc:process($cur,$pre("r"),$pre("d"),$pre("o"),$pre("i"))
                 let $nu := console:log($tmp)
                 return $tmp
             else
                 $pre
         })
-        return xqc:wrap-depth(tail($parts),$tmp("r"),$tmp("d"),$tmp("o"),$params)
+        return xqc:wrap-depth(tail($parts),$tmp("r"),$tmp("d"),$tmp("o"),$tmp("i"),$params)
 };
 
 declare function xqc:normalize-query-b($query as xs:string?,$params as map(*)) {
-    tokenize($query,";") ! xqc:wrap-depth(xqc:prepare-tokens(.),[],1,[],$params)
+    fold-left(tokenize($query,";") ! xqc:wrap-depth(xqc:prepare-tokens(.),[],1,[],map {},$params), "",function($acc,$a){
+        a:fold-left($a,$acc,function($acc,$entry){
+            concat($acc,$entry("v"))
+        })
+    })
 };
 
 
