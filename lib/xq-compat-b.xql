@@ -930,7 +930,7 @@ declare function xqc:tpl($t,$d,$v){
 declare function xqc:unwrap($cur,$ret,$d,$o,$i){
     let $osize := array:size($o)
     let $ocur := if($osize gt 0) then $o($osize) else map {}
-    let $is-ass := $cur("t") eq 4 and $cur("v") eq 211 and $cur("d") eq $ocur("d") and $ocur("t") eq 4 and $ocur("v") eq 210
+    let $is-ass := $cur("t") eq 4 and $cur("v") eq 211 and $d eq $ocur("d") and $ocur("t") eq 4 and $ocur("v") eq 210
     let $nu := console:log(("unwrap: ",$d, " o: ",$ocur, $is-ass))
     return
         if($osize eq 0 or $ocur("d") gt $d or $is-ass) then
@@ -975,7 +975,7 @@ declare function xqc:rtp($r as array(*),$d as xs:integer,$o as array(*),$i as ma
                 else
                     map {}
         let $o := a:pop($o)
-        let $noclose := $ocur("t") eq 4 and $ocur("v") = (217,218,209)
+        let $noclose := $ocur("t") eq 4 and $ocur("v") = (217,218,209,2106,3006)
         let $r :=
             if($noclose) then
                 $r
@@ -1006,7 +1006,7 @@ declare function xqc:rtp($r as array(*),$d as xs:integer,$o as array(*),$i as ma
  : - never look ahead, only denote open operators
  : - only append what is processed!
  : - detect operator: binary or unary
- : TODO detect + transform namespace declarations: if *at* is found, stack it to o, remove last paren and write out comma
+ : - detect + transform namespace declarations: if *at* is found, stack it to o, remove last paren and write out comma
  : - transform operator to prefix notation
  :)
 
@@ -1023,18 +1023,22 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
             if($t eq 0) then
                 xqc:unwrap($cur,$ret,$d,$o,$i)
             else if($t eq 1) then
-                (: detect function qname, may be too intricate :)
+                (: detect first opening bracket after function declaration :)
+                (: detect parameters, we need to change 2106 to something else at opening bracket here :)
                 let $prev := $ret($size)
+                let $has-func := $has-op and $ocur("v") eq 2106
+                let $is-body := $has-op and $ocur("v") eq 3006
+                let $cur := xqc:tpl($t,$d,$v)
                 let $ret :=
-                    if(($prev("t") eq 6 or $v eq "{") and $has-op and $ocur("v") eq 2106) then
+                    if($has-func or $is-body) then
                         array:append($ret,xqc:tpl(3,$d,","))
                     else
                         $ret
                 return
-                    xqc:rtp($ret,$d + 1,$o,$i,xqc:tpl($t,$d,"("))
+                    xqc:rtp($ret,$d + 1,$o,$i,$cur,if($has-func or $is-body) then true() else (),if($has-func) then xqc:tpl(4,$d,3006) else if($is-body) then $cur else ())
             else if($t eq 2) then
                 (: close else :)
-                xqc:rtp($ret,$d - 1,$o,$i,xqc:tpl($t,$d,")"),$has-op and $ocur("v") eq 208 and $ocur("d") eq $d)
+                xqc:rtp($ret,$d - 1,$o,$i,xqc:tpl($t,$d,$v),$has-op and $ocur("v") eq 208 and $ocur("d") eq $d)
             else if($t eq 4) then
                 if($v eq 217) then
                     xqc:rtp($ret,$d,$o,$i,(),(),xqc:tpl($t,$d,$v))
@@ -1153,9 +1157,9 @@ declare function xqc:wrap-depth($parts as xs:string*,$ret as array(*),$depth as 
 };
 
 declare function xqc:normalize-query-b($query as xs:string?,$params as map(*)) {
-    fold-left(tokenize($query,";") ! xqc:wrap-depth(xqc:prepare-tokens(.),[],1,[],map {},$params), "",function($acc,$a){
-        a:fold-left($a,$acc,function($acc,$entry){
-            concat($acc,$entry("v"))
+    for-each(tokenize($query,";") ! xqc:wrap-depth(xqc:prepare-tokens(.),[],1,[],map {},$params), function($a){
+        a:fold-left($a,"",function($pre,$entry){
+            concat($pre,$entry("v"))
         })
     })
 };
