@@ -105,7 +105,7 @@ declare variable $xqc:operators as map(xs:integer, xs:string) := map {
 	2400: "as",
 	2501: "(:",
 	2502: ":)",
-	2600: ":"
+	2005: ":"
 };
 
 (: TODO increase / decrease depth, comma depth stays same:)
@@ -233,7 +233,7 @@ declare variable $xqc:operator-trie := map {
 	},
 	":": [map {
 		"_k": ":",
-		"_v": 2600
+		"_v": 2005
 	}, map {
 		")": map {
 			"_k": ":)",
@@ -930,12 +930,13 @@ declare function xqc:tpl($t,$d,$v){
 declare function xqc:unwrap($cur,$ret,$d,$o,$i,$p){
     let $osize := array:size($o)
     let $ocur := if($osize gt 0) then $o($osize) else map {}
-    let $is-ass := $cur("t") eq 4 and $cur("v") eq 211 and $d eq $ocur("d") and $ocur("t") eq 4 and $ocur("v") eq 210
+    let $has-op := $cur("t") eq 4
+    let $is-ass := $has-op and $cur("v") eq 211 and $d eq $ocur("d") and $ocur("t") eq 4 and $ocur("v") eq 210
     let $is-body := $cur("t") eq 0 and $ocur("t") eq 1 and $ocur("v") eq "{"
     let $close := $is-ass or $is-body
-    let $nu := console:log(("unwrap: ",$d, ", o: ",$ocur, ", is-ass: ", $is-ass, ", is-body: ", $is-body))
+    let $nu := console:log(("unwrap: ",$d, ", o: ",$o, ", is-ass: ", $is-ass, ", is-body: ", $is-body))
     return
-        if($osize eq 0 or $ocur("d") gt $d or $close) then
+        if($osize eq 0 or $ocur("d") ge $d or $close) then
             let $t := $cur("t")
             let $v := $cur("v")
             let $ret :=
@@ -953,7 +954,7 @@ declare function xqc:unwrap($cur,$ret,$d,$o,$i,$p){
                     "p": $p
                 }
         else
-            xqc:unwrap($cur, array:append($ret,xqc:tpl(2,$d,")")), $d - 1, a:pop($o), map:put($i, $d, array:size($ret)),$p)
+            xqc:unwrap($cur, array:append($ret,xqc:tpl(2,$d,")")), $ocur("d"), a:pop($o), map:put($i, $d, array:size($ret)),$p)
 };
 
 
@@ -1037,7 +1038,21 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                 (: detect parameters, we need to change 2106 to something else at opening bracket here :)
                 let $prev := $ret($size)
                 let $has-func := $has-op and $ocur("v") eq 2106
+                let $is-curly := $v eq "{"
+                let $has-rettype := $is-curly and $has-op and $ocur("v") = 2400
+                let $o :=
+                    if($has-rettype) then
+                        array:remove($o,$osize)
+                    else
+                        $o
+                let $ocur :=
+                    if($has-rettype) then
+                        $o($osize - 1)
+                    else
+                        $ocur
                 let $has-params := $has-op and $ocur("v") eq 3106
+                let $has-constructor := $has-rettype eq false() and $has-func eq false() and $is-curly and $has-op and $ocur("v") gt 2100
+                let $v := if($has-constructor) then "(" else $v
                 let $cur := xqc:tpl($t,$d,$v)
                 let $tpl :=
                     if($has-func) then
@@ -1046,27 +1061,39 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                         let $tpl := a:fold-left-at($p,(xqc:tpl(3,$d,","),$cur),function($pre,$cur,$i) {
                             ($pre,xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"("),xqc:tpl(4,$d,$cur),xqc:tpl(3,$d+1,","),xqc:tpl(4,$d+1,concat("$",$i)),xqc:tpl(2,$d,")"),xqc:tpl(3,$d,","))
                         })
-                        let $nu := console:log($tpl)
+(:                        let $nu := console:log($tpl):)
                         return $tpl
                     else
                         $cur
                 return
-                    xqc:rtp($ret,$d + 1,$o,$i,$p,$tpl,$has-func or $has-params,if($has-func) then xqc:tpl(4,$d,3006) else if($has-params) then $cur else ())
+                    xqc:rtp($ret,$d + 1,$o,$i,$p,$tpl,$has-func or $has-params,if($has-func) then xqc:tpl(4,$d,3006) else if($has-params or $has-constructor) then $cur else ())
             else if($t eq 2) then
                 (: close else :)
-                (: detect param :)
-                let $has-else := $has-op and $ocur("v") eq 208 and $ocur("d") eq $d
-                let $is-type := $has-op and $ocur("v") eq 2400
-                let $has-params := $is-type eq false() and $has-op and $ocur("v") eq 3006
                 (:
-                if it's a param, it means type wasn't set, so add item
+                    close computed constructors
                 :)
-                let $cur :=
-                    if($has-params) then
-                        (xqc:tpl(10,$d,"item"),xqc:tpl($t,$d,$v))
+                    if($v eq "}") then
+                        (: TODO check for constructor, remove op :)
+                        let $v := if($ocur("t") eq 1) then "}" else ")"
+                        return xqc:unwrap(xqc:tpl($t,$d,$v), $ret, $d, $o, $i, $p)
                     else
-                        xqc:tpl($t,$d,$v)
-                return xqc:rtp($ret,$d - 1,$o,$i,$p,$cur,$has-else or $is-type or $has-params, if($has-params) then xqc:tpl(4,$d,3106) else ())
+                        (: detect param :)
+                        let $has-else := $has-op and $ocur("v") eq 208 and $ocur("d") eq $d
+                        let $is-type := $has-op and $ocur("v") eq 2400
+                        let $has-params := $v eq ")" and $is-type eq false() and $has-op and $ocur("v") eq 3006
+                        let $nu := console:log(("has-params: ",$has-params,", p: ",$p, ", is-type: ",$is-type))
+                        (:
+                        if it's a param, it means type wasn't set, so add item
+                        :)
+
+                        let $cur :=
+                            if($has-params) then
+                                (xqc:tpl(10,$d,"item"),xqc:tpl($t,$d,$v))
+                            else
+                                xqc:tpl($t,$d,$v)
+                        return xqc:rtp($ret,$d - 1,$o,$i,$p,$cur,$has-else or $is-type or $has-params,
+                            if($has-params or $is-type) then xqc:tpl(4,$d,3106) else ()
+                        )
             else if($t eq 3) then
                 (: some things to detect here:
                  * param
@@ -1091,7 +1118,10 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                     xqc:rtp($ret,$d + 1, $o, $i,$p, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")),$has-op and $ocur("v") eq 217,xqc:tpl($t,$d,$v))
                 else if($v eq 2106) then
                     (: TODO check if o contains declare (would it not?) :)
-                    xqc:rtp($ret,$d + 1, $o, $i,$p, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")),$has-op and $ocur("v") eq 217,xqc:tpl($t,$d,$v))
+                    if($ocur("t") eq 4 and $ocur("v") eq 217) then
+                        xqc:rtp($ret,$d + 1, $o, $i,$p, (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,"(")),$has-op and $ocur("v") eq 217,xqc:tpl($t,$d,$v))
+                    else
+                        xqc:rtp($ret,$d + 1, $o, $i,$p, xqc:tpl($t,$d,$v))
                 else if($v eq 2400) then
                     let $has-params := $has-op and $ocur("v") eq 3006
                     return xqc:rtp($ret,$d, $o, $i,$p, if($has-params) then () else xqc:tpl(3,$d,","), (), xqc:tpl($t,$d,$v))
@@ -1113,7 +1143,7 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                 else if($v eq 220) then
                     (: close anything that needs to be closed in $o:)
                     xqc:rtp($ret,$d,$o,$i,$p,xqc:tpl(3,$d,","))
-                else if($v >= 300 and $v < 1000) then
+                else if($v >= 300 and $v < 2100) then
                     if($size eq 0) then
                         (: nothing before, so op must be unary :)
                         let $nu := console:log(("un-op: ",$v))
@@ -1123,7 +1153,6 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                     else
                         let $nu := console:log(("bin-op: ",$v))
                         let $prev := $ret($size)
-                        let $preceding-op := if($has-pre-op) then $ocur("v") lt $v else false()
                         return
                             if($v = (801,901) and $prev("t") = (1,6)) then
                                 (: these operators are occurrence indicators when the previous is an open paren or qname :)
@@ -1134,21 +1163,41 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                                 return xqc:rtp($ret,$d + 1, $o, $i,$p, ($cur,xqc:tpl(1,$d,"(")), (), $cur)
                             else
                                 (: bin-op: pull in left side, add parens :)
+                                let $preceding-op := if($has-pre-op) then $ocur("v") lt $v else false()
+                                (: if preceding, lower depth, as to takes the previous index :)
+                                (: furthermore, close directly and remove the operator :)
+                                let $d :=
+                                    if($preceding-op) then
+                                        $d - 1
+                                    else
+                                        $d
                                 let $cur := xqc:tpl($t,$d,$v)
                                 let $split := $i($d)
-                                let $left := xqc:incr(array:subarray($ret,$split))
-(:                                let $nu := console:log(("left: ",$left)):)
-                                let $ret := array:subarray($ret,1,$split - 1)
-                                let $ret := array:append($ret,$cur)
+                                let $left :=
+(:                                    if($v eq 1901 and $has-op and $ocur("v") eq 1901) then:)
+(:                                        []:)
+(:                                    else :)
+                                    if($preceding-op) then
+                                        array:append(xqc:incr(array:subarray($ret,$split)),xqc:tpl(2,$d + 1,")"))
+                                    else
+                                        xqc:incr(array:subarray($ret,$split))
+                                let $o :=
+                                    if($preceding-op) then
+                                        array:remove($o,$osize)
+                                    else
+                                        $o
+                                let $ret := array:append(array:subarray($ret,1,$split - 1),$cur)
                                 let $i := map:put($i, $d, array:size($ret))
-                                let $ret := array:append($ret,xqc:tpl(1,$d,"("))
-                                let $ret := array:join(($ret,$left))
+                                let $ret := array:join((array:append($ret,xqc:tpl(1,$d,"(")),$left))
                                 return xqc:rtp($ret,$d + 1, $o, $i,$p, xqc:tpl(3,$d + 1,","), (), $cur)
+                    else if($v gt 2100 and $v lt 2200) then
+                        let $cur := xqc:tpl($t,$d,$v)
+                        return xqc:rtp($ret,$d,$o,$i,$p,$cur,$has-pre-op,$cur)
                     else
                         xqc:rtp($ret,$d,$o,$i,$p,xqc:tpl($t,$d,$v),$has-pre-op)
             else if($t eq 5) then
                 let $is-param := $has-op and $ocur("v") eq 3006
-                let $nu := console:log($ocur)
+(:                let $nu := console:log($ocur):)
                 let $v :=
                     if($has-op and $ocur("v") = (218,209,3006)) then
                         replace($v,"^\$","")
