@@ -65,23 +65,21 @@ let $params :=
             $params
 let $file := "js"
 let $dir := "lib"
-let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8")
+(:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/" || $file || ".rdl"), "utf-8"):)
-(:let $query := ':)
-(:import module namespace a="http://raddle.org/array-util" at "../lib/array-util.xql";:)
-(::)
-(:declare variable $local:m := map{"X":function(){}};:)
-(::)
-(:declare function local:test($x) {:)
-(:    let $x := -$x return $x:)
-(:};:)
-(:':)
+let $query := '
+declare function local:test($x) as xs:integer {
+    if($x) then 1 else 2
+};
+'
 (:let $temp := xqc:dawg-find($xqc:operator-dawg,"d","d",$xqc:operator-map,false(),()):)
 (:let $temp := xqc:dawg-find($temp(2),"e","de",$xqc:operator-map,false(),$temp(1)):)
 (:return xqc:dawg-find($temp(2),"c","dec",$xqc:operator-map,false(),$temp(1)):)
 (:let $rdl := json-doc("/db/apps/raddle.xq/ast/" || $file || ".json"):)
 let $c := local:normalize($query,$params)
 return $c
+    
+(:    map:keys($xqc:operators)[. gt 300 and . lt 1900 and not(.=$xqc:lr-op)]:)
 
 (:return local:serialize(rdl:parse($query,$params)):)
 
