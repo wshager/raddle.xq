@@ -37,7 +37,9 @@ declare variable $xqc:operators as map(xs:integer, xs:string) := map {
 	220: "at",
 	221: "for",
 	222: "in",
-	223: "group-by",
+	223: "where",
+	224: "order-by",
+	225: "group-by",
 	300: "or",
 	400: "and",
 	501: "eq",
@@ -417,7 +419,7 @@ declare variable $xqc:operator-trie := map {
 	}, map {
 		"r": map {
 			"_k": "group-by",
-			"_v": 223
+			"_v": 225
 		}
 	}, map {
 		"t": map {
@@ -516,10 +518,15 @@ declare variable $xqc:operator-trie := map {
 			"_v": 2211
 		}
 	}],
-	"o": map {
+	"o": [map {
 		"_k": "or",
 		"_v": 300
-	},
+	}, map {
+	    "r": map {
+	        "_k": "order-by",
+		    "_v": 224
+	    }
+	}],
 	"p": [map {
 		"_k": "processing-instruction",
 		"_v": 2109
@@ -599,6 +606,10 @@ declare variable $xqc:operator-trie := map {
 			"_v": 215
 		}
 	}],
+	"w": map {
+		"_k": "where",
+		"_v": 223
+	},
 	"x": map {
 		"_k": "xquery",
 		"_v": 214
@@ -928,10 +939,11 @@ declare function xqc:tpl($t,$d,$v){
 };
 
 declare function xqc:op-name($v){
-    if(map:contains($xqc:operator-map,$v)) then
-        $xqc:operator-map($v)
-    else
-        $xqc:operators($v)
+    $v
+(:    if(map:contains($xqc:operator-map,$v)) then:)
+(:        $xqc:operator-map($v):)
+(:    else:)
+(:        $xqc:operators($v):)
 };
 
 declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
@@ -1244,7 +1256,7 @@ declare function xqc:prepare-tokens($part){
         ! replace(.,$xqc:token-re,"$1 $2 $3")
         ! replace(.,":([%\p{N}])"," : $1")
         ! replace(.,": =",":=")
-        ! replace(.,"(group|instance|treat|cast|castable)\s+(by|of|as)","$1-$2")
+        ! replace(.,"(group|instance|treat|cast|castable|order)\s+(by|of|as)","$1-$2")
         ! replace(.,concat("([",$xqc:block-chars,"])([^\s])|([^\s])([",$xqc:block-chars,"])"),"$1 $2")
         ! replace(.,concat("(\s\p{N}+)(\-)([^\s])|([",$xqc:block-chars,$xqc:stop-chars,"]+)(\-)([^\s])"),"$1 $2 $3")
         ! concat(., " ;")
