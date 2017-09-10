@@ -279,6 +279,7 @@ declare function xqc:op-name($v){
 };
 
 declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
+    (: TODO cleanup (e.g. separate is-close and is-op), apply for all cases :)
     let $osize := array:size($o)
     let $ocur := if($osize gt 0) then $o($osize) else map {}
     let $has-op := $ocur("t") eq 4
@@ -302,6 +303,7 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
     let $has-curly-open := $has-open and $ocur("v") eq "{"
     let $has-square-open := $has-open and $ocur("v") eq "["
     let $pass := $is-let and ($has-op eq false() or $ocur("v") eq 3106)
+    let $has-af := $is-square-close and $has-op and $ocur("v") = (2001,2004)
     let $matching := $is-close and $has-open and (
         ($is-curly-close and $has-curly-open) or
         ($is-paren-close and $has-paren-open) or
@@ -312,13 +314,13 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
     let $r := if($has-else) then array:append($r,xqc:tpl(2,$d,"}")) else $r
     let $d := if($has-else) then $d - 1 else $d
     return
-        if($osize eq 0 or $pass or $is-ass or $is-body or $is-constructor or $has-typesig or $has-params or $matching) then
+        if($osize eq 0 or $pass or $is-ass or $is-body or $is-constructor or $has-typesig or $has-params or $has-af or $matching) then
             let $t := $cur("t")
             let $v := $cur("v")
             let $tpl :=
                 if($has-params) then
                     (xqc:tpl(5,$d,"item"),xqc:tpl(1,$d,"("),xqc:tpl(2,$d,")"),$cur)
-                else if($is-constructor) then
+                else if($is-constructor or $has-af) then
                     xqc:tpl($t,$d,")")
                 else if($pass) then
                     ()
@@ -332,12 +334,12 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
             return
                 map {
                     "r": if(exists($tpl)) then fold-left($tpl,$r,array:append#2) else $r,
-                    "d": if($is-ass or $is-body or $is-constructor or $has-typesig or $has-params or $matching) then $d - 1 else $d,
+                    "d": if($is-ass or $is-body or $is-constructor or $has-typesig or $has-params or $has-af or $matching) then $d - 1 else $d,
                     "o":
                         if($has-params or $has-typesig) then
                             let $o := if($has-typesig) then a:pop($o) else $o
                             return array:append(a:pop($o),xqc:tpl(4,$d,3106))
-                        else if($is-ass or $is-body or $is-constructor or $has-typesig or $matching) then
+                        else if($is-ass or $is-body or $is-constructor or $has-typesig or $has-af or $matching) then
                             a:pop($o)
                         else
                             $o,
@@ -421,17 +423,28 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
             else if($t eq 1) then
                 if($v eq "[") then
                     let $cur := xqc:tpl($t,$d,$v)
-                    (: TODO pull in right-side if filter :)
-                    let $it := if($size eq 0 or $ret($size)("t") = (1,3,6)) then 2004 else 2001
+                    (: TODO pull in right-side if filter, except when select :)
+                    let $has-select := $has-op and $ocur("v") eq 1901
+                    let $it := if($size eq 0 or ($ret($size)("t") = (1,3,6) and $has-select eq false())) then 2004 else 2001
+                    let $cur := xqc:tpl(4,$d,xqc:op-name($it))
                     let $ret :=
+                        if($it eq 2001 and $has-select eq false()) then
+                            let $split := $i($d)
+(:                            let $split := if($ret($split)("t") eq 1) then $split - 1 else $split:)
+                            let $left := xqc:incr(array:subarray($ret,$split))
+                            let $ret := array:subarray($ret,1,$split - 1)
+                            return array:join(($ret,[xqc:tpl(3,$d,","),$cur,xqc:tpl(1,$d,"(")],$left))
+                        else
+                            $ret
+                    let $tpl :=
                         if($it eq 2001) then
-                                let $split := $i($d)
-                                let $left := xqc:incr(array:subarray($ret,$split))
-                                let $ret := array:append(array:subarray($ret,1,$split - 1),xqc:tpl(4,$d,xqc:op-name($it)))
-                                return array:join(($ret,[xqc:tpl(1,$d,"(")],$left,[xqc:tpl(3,$d,",")]))
+                            if($has-select) then
+                                (xqc:tpl(3,$d,","),$cur,xqc:tpl(1,$d,"("))
                             else
-                                array:join(($ret,[xqc:tpl(4,$d,xqc:op-name($it)),xqc:tpl(1,$d,"(")]))
-                    return xqc:rtp($ret,$d + 1,$o,$i,$p,(),false(),$cur)
+                                xqc:tpl(3,$d,",")
+                        else
+                            ($cur,xqc:tpl(1,$d,"("))
+                    return xqc:rtp($ret,$d + 1,$o,$i,$p,$tpl,false(),xqc:tpl(4,$d,$it))
                 else if($v eq "{") then
                     let $has-rettype := $has-op and $ocur("v") = 2400
                     let $o :=
@@ -569,7 +582,8 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                                     else
                                         $d
                                 let $split := $i($d)
-                                let $nu := console:log(array:subarray($ret,$split))
+                                let $nu := console:log($ret($split))
+                                let $split := if($ret($split)("t") eq 1) then $split - 1 else $split
                                 let $left :=
 (:                                    if($v eq 1901 and $has-op and $ocur("v") eq 1901) then:)
 (:                                        []:)
