@@ -2,9 +2,7 @@ xquery version "3.1";
 
 declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
 
-import module namespace rdl="http://raddle.org/raddle" at "../content/raddle.xql";
-import module namespace js="http://raddle.org/javascript" at "../lib/js.xql";
-import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat.xql";
+import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat-b.xql";
 import module namespace a="http://raddle.org/array-util" at "/db/apps/raddle.xq/lib/array-util.xql";
 import module namespace env="http://raddle.org/env" at "/db/apps/raddle.xq/lib/env.xql";
 import module namespace console="http://exist-db.org/xquery/console";
@@ -59,8 +57,6 @@ let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [
 let $params :=
         if($params("$compat") eq "xquery") then
             map:put(map:put($params,"$operators",$xqc:operators),"$operator-map",$xqc:operator-map)
-        else if($params("$compat") eq "rql") then
-            map:put(map:put($params,"$operators",$rdl:operators),"$operator-map",$rdl:operator-map)
         else
             $params
 let $file := "js"
@@ -68,9 +64,9 @@ let $dir := "lib"
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/" || $file || ".rdl"), "utf-8"):)
 let $query := '
-declare function local:test($x) as xs:integer {
-    if($x) then 1 else 2
-};
+declare function local:test($x){
+    $x/a[name() eq "test"]
+}
 '
 (:let $temp := xqc:dawg-find($xqc:operator-dawg,"d","d",$xqc:operator-map,false(),()):)
 (:let $temp := xqc:dawg-find($temp(2),"e","de",$xqc:operator-map,false(),$temp(1)):)
@@ -78,10 +74,8 @@ declare function local:test($x) as xs:integer {
 (:let $rdl := json-doc("/db/apps/raddle.xq/ast/" || $file || ".json"):)
 let $c := local:normalize($query,$params)
 return $c
-    
-(:    map:keys($xqc:operators)[. gt 300 and . lt 1900 and not(.=$xqc:lr-op)]:)
 
-(:return local:serialize(rdl:parse($query,$params)):)
+(:return xmldb:store("/db/apps/raddle.xq","operator-trie.json",local:serialize($xqc:operator-trie),"application/json"):)
 
 (:let $rdl := rdl:parse($query,$params):)
 
