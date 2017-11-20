@@ -10,7 +10,7 @@ import module namespace dawg="http://lagua.nl/dawg" at "../lib/dawg.xql";
 declare variable $xqc:ncform := "\p{L}\p{N}\-_";
 declare variable $xqc:ncname := concat("^[",$xqc:ncform,"]");
 declare variable $xqc:qform := concat("[",$xqc:ncform,"]*:?[",$xqc:ncform,"]+");
-declare variable $xqc:qname := concat("^",$xqc:qform,"$");
+declare variable $xqc:qname := concat("^",$xqc:qform,"(#\p{N}+)?$");
 declare variable $xqc:var-qname := concat("^\$",$xqc:qform,"$");
 declare variable $xqc:operator-regexp := "=#\p{N}+=";
 
@@ -248,7 +248,7 @@ declare function xqc:inspect-buf($s,$params){
             else if(matches($s,$xqc:qname)) then
                 map { "t" : 6, "v" : $s}
             else
-                (: typically an unmatched : in maps :)
+                (: typically an unmatched : in maps OR qname :)
                 (: TODO perform partial analysis, because it may contain a qname :)
                 if(matches($s,":")) then
                     analyze-string($s,":")//text() ! xqc:inspect-buf(.,$params)
@@ -343,7 +343,7 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
                 else
                     $d
             let $tpl :=
-                if($has-params) then
+                if($has-params and $t ne 2) then
                     (xqc:tpl(5,$d,"item"),xqc:tpl(1,$d,"("),xqc:tpl(2,$d,")"),$cur)
                 else if($is-xret or $is-x or $is-xlet) then
                     let $tpl := ($tpl,xqc:tpl(4,$d,concat("x-",$xqc:operators($v))),xqc:tpl(1,$d,"("),xqc:tpl(1,$d+1,"{"))
