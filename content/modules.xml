@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <root>
     <module name="fn" prefix="" uri="http://www.w3.org/2005/xpath-functions"/>
     <module name="x" prefix="x" uri="http://raddle.org/x" location="/db/apps/raddle.xq/lib/x.xql"/>

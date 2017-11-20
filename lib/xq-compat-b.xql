@@ -305,7 +305,7 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
     let $pass := $is-let and ($has-op eq false() or $ocur("v") eq 3106)
     let $has-af := $is-square-close and $has-op and $ocur("v") = (2001,2004)
     let $matching := $is-close and $has-open and (
-        ($is-curly-close and $has-curly-open) or
+        ($is-curly-close and $has-curly-open) or 
         ($is-paren-close and $has-paren-open) or
         ($is-square-close and $has-square-open))
 (:    let $nu := if($is-paren-close) then console:log(("has-params: ",$has-params,", is-type: ",$has-typesig," has-else: ",$has-else)) else ():)
@@ -425,15 +425,14 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                     let $cur := xqc:tpl($t,$d,$v)
                     (: TODO pull in right-side if filter, except when select :)
                     let $has-select := $has-op and $ocur("v") eq 1901
-                    let $it := if($size eq 0 or ($ret($size)("t") = (1,3,6) and $has-select eq false())) then 2004 else 2001
+                    let $it := if($size eq 0 or $ret($size)("t") = (1,3)) then 2004 else 2001
                     let $cur := xqc:tpl(4,$d,xqc:op-name($it))
                     let $ret :=
                         if($it eq 2001 and $has-select eq false()) then
                             let $split := $i($d)
-(:                            let $split := if($ret($split)("t") eq 1) then $split - 1 else $split:)
                             let $left := xqc:incr(array:subarray($ret,$split))
                             let $ret := array:subarray($ret,1,$split - 1)
-                            return array:join(($ret,[xqc:tpl(3,$d,","),$cur,xqc:tpl(1,$d,"(")],$left))
+                            return array:join(($ret,[$cur,xqc:tpl(1,$d,"(")],$left))
                         else
                             $ret
                     let $tpl :=
@@ -675,7 +674,7 @@ declare function xqc:normalize-query-b($query as xs:string?,$params as map(*)) {
     for-each(for-each(tokenize($query,";"),function($part) {
         let $tok := xqc:prepare-tokens($part)
         let $nu := console:log(("out: ",$tok))
-        return
+        return  
             xqc:wrap-depth($tok,[],1,[],map {},[],$params)
     }), function($a){
         a:fold-left($a,"",function($pre,$entry){

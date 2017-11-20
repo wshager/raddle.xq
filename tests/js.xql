@@ -6,8 +6,10 @@ import module namespace raddle="http://raddle.org/raddle" at "../content/raddle.
 
 let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$transpile":="js"}
 
-let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/core.rdl"), "utf-8")
+let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/raddle.rdl"), "utf-8")
+
+(:let $query  := 'core:item($,closes,core:filter(subsequence($lastseen,$lastindex,count($lastseen)),(core:geq(.,(2.08,2.11))))),core:item($,closes,($closes,2.11))':)
 
 (:return raddle:exec($query,$params):)
 
-return xmldb:store("/db/apps/raddle.xq/js","core.js",raddle:exec($query,$params),"application/javascript")
+return xmldb:store("/db/apps/raddle.xq/js","raddle.js",raddle:exec($query,$params),"application/javascript")
