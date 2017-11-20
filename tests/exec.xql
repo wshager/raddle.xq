@@ -64,9 +64,12 @@ let $dir := "lib"
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/" || $file || ".rdl"), "utf-8"):)
 let $query := '
-declare function local:test($x){
-    $x/a[name() eq "test"]
-}
+for $x in collection("bla")
+    for $y in collection("bla")
+    let $z := 3
+    order by $x
+    return 
+        $x
 '
 (:let $temp := xqc:dawg-find($xqc:operator-dawg,"d","d",$xqc:operator-map,false(),()):)
 (:let $temp := xqc:dawg-find($temp(2),"e","de",$xqc:operator-map,false(),$temp(1)):)
@@ -74,8 +77,10 @@ declare function local:test($x){
 (:let $rdl := json-doc("/db/apps/raddle.xq/ast/" || $file || ".json"):)
 let $c := local:normalize($query,$params)
 return $c
+    
+(:    map:keys($xqc:operators)[. gt 300 and . lt 1900 and not(.=$xqc:lr-op)]:)
 
-(:return xmldb:store("/db/apps/raddle.xq","operator-trie.json",local:serialize($xqc:operator-trie),"application/json"):)
+(:return local:serialize(rdl:parse($query,$params)):)
 
 (:let $rdl := rdl:parse($query,$params):)
 
