@@ -5,7 +5,7 @@ declare namespace output="http://www.w3.org/2010/xslt-xquery-serialization";
 import module namespace xqc="http://raddle.org/xquery-compat" at "../lib/xq-compat-b.xql";
 import module namespace a="http://raddle.org/array-util" at "/db/apps/raddle.xq/lib/array-util.xql";
 import module namespace env="http://raddle.org/env" at "/db/apps/raddle.xq/lib/env.xql";
-import module namespace console="http://exist-db.org/xquery/console";
+(:import module namespace console="http://exist-db.org/xquery/console";:)
 
 
 declare function local:serialize($dict){
@@ -16,7 +16,6 @@ declare function local:serialize($dict){
 };
 
 declare function local:process-strings($strings,$ret,$index) {
-    let $Nu := console:log($strings) return
     fold-left(1 to count($strings),$ret,function($ret,$index){
         let $head := $strings[$index]
         return
@@ -81,20 +80,27 @@ declare function local:to-l3($pre,$entry,$strings){
 
 declare function local:parse-strings($processed, $strings, $params) {
     (: TODO write wrapper function that adds strings to map uniquely, only incrementing per string (double entry) :)
-    let $process := if($params("l3")) then
-        function($pre,$entry){
-            local:to-l3($pre,$entry,$strings)
-        }
-    else
-        function($pre,$entry){
-            let $t := $entry("t")
-            let $v := local:restore-string($t,$entry("v"),$strings)
-            return concat($pre,$v)
-        }
-	return a:fold-left(xqc:normalize-query-b($processed,$params),"",$process)
+    let $normalform := xqc:normalize-query-b($processed,$params)
+    return
+        if($params("source")) then
+            local:serialize(a:fold-left($normalform,[],function($pre,$entry){
+                let $t := $entry("t")
+                let $v := local:restore-string($t,$entry("v"),$strings)
+                return array:append($pre,xqc:tpl($t,$entry("d"),$v))
+            }))
+        else if($params("l3")) then
+            a:fold-left($normalform,(),function($pre,$entry){
+                local:to-l3($pre,$entry,$strings)
+            })
+        else
+            a:fold-left($normalform,"",function($pre,$entry){
+                let $t := $entry("t")
+                let $v := local:restore-string($t,$entry("v"),$strings)
+                return concat($pre,$v)
+            })
 };
 
-let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "js" , "l3": true()}
+let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "js" , "l3": false(),"source":false()}
 let $params :=
         if($params("$compat") eq "xquery") then
             map:put(map:put($params,"$operators",$xqc:operators),"$operator-map",$xqc:operator-map)
@@ -105,7 +111,9 @@ let $dir := "lib"
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
 (:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/" || $file || ".rdl"), "utf-8"):)
 let $query := '
-for $x in collection("/db") return $x + 1
+declare function local:test() as xs:integer {
+1
+}
 '
 (:let $temp := xqc:dawg-find($xqc:operator-dawg,"d","d",$xqc:operator-map,false(),()):)
 (:let $temp := xqc:dawg-find($temp(2),"e","de",$xqc:operator-map,false(),$temp(1)):)
