@@ -893,8 +893,11 @@ declare function xqc:to-l3($pre,$entry,$at,$normalform,$size){
         else if($t eq 8) then
             (12,$v)
         else if($t eq 6) then
-            let $next := if($at lt $size) then $normalform($at + 1) else ()
-            return if(exists($next) and $next("t") eq 1) then (14,$v) else (3,$v)
+            if(matches($v,"#\p{N}$")) then
+                (4,$v)
+            else
+                let $next := if($at lt $size) then $normalform($at + 1) else ()
+                return if(exists($next) and $next("t") eq 1) then (14,$v) else (3,$v)
         else if($t = (4,10)) then
             (14,$v)
         else if($t eq 5) then
