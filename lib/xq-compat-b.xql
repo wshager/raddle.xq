@@ -21,7 +21,7 @@ unknown := 9;
 
 declare variable $xqc:ncform := "\p{L}\p{N}\-_";
 declare variable $xqc:ncname := concat("^[",$xqc:ncform,"]");
-declare variable $xqc:qform := concat("[",$xqc:ncform,"]*:?[",$xqc:ncform,"]+");
+declare variable $xqc:qform := concat("[",$xqc:ncform,":]+");
 declare variable $xqc:qname := concat("^",$xqc:qform,"(#\p{N}+)?$");
 declare variable $xqc:var-qname := concat("^\$",$xqc:qform,"$");
 declare variable $xqc:operator-regexp := "=#\p{N}+=";
@@ -245,38 +245,39 @@ declare variable $xqc:uri-chars := map {
     "%3A" : ":"
 };
 
+declare function xqc:is-qname($b) {
+    every $s in $b satisfies matches($s,$xqc:qform)
+};
+
+declare function xqc:is-number($b) {
+    every $s in $b satisfies matches($s,"[\p{N}.]+")
+};
+
 declare function xqc:inspect-buf($s){
-    if($s eq "") then
+    if(empty($s)) then
         ()
-    else if(matches($s,"^;$")) then
-        map { "t" : 0, "v" : $s}
-    else if(matches($s,"^[\(\[\{]$")) then
-        map { "t" : 1, "v" : $s}
-    else if(matches($s,"^[\)\]\}]$")) then
-        map { "t" : 2, "v" : $s}
-    else if(matches($s,"^,$")) then
-        map { "t" : 3, "v" : $s}
-    else if(matches($s,$xqc:var-qname)) then
-        map { "t" : 5, "v" : $s}
-    else if(matches($s,"^%\p{N}+%$")) then
-        map { "t" : 7, "v" : $s}
+    else if(head($s) eq "$") then
+        let $t := tail($s)
+        return
+            if(empty($t)) then
+                (: for rdl :)
+                map { "t" : 10, "v" : $s}
+            else if(xqc:is-qname($s)) then
+                map { "t" : 5, "v" : string-join($s)}
+            else
+                map { "t" : 9, "v" : string-join($s)}
     else
         let $ret := dawg:traverse([$xqc:operator-trie,[]],$s)
         return if(empty($ret) or $ret instance of array(*)) then
-            if(matches($s,"^\p{N}+$")) then
+            if(xqc:is-number($s)) then
                 map { "t" : 8, "v" : $s}
-            else if(matches($s,$xqc:qname)) then
+            else if(xqc:is-qname($s)) then
                 map { "t" : 6, "v" : $s}
             else
                 (: typically an unmatched : in maps OR qname :)
                 (: TODO perform partial analysis, because it may contain a qname :)
-                if(matches($s,":")) then
-                    analyze-string($s,":")//text() ! xqc:inspect-buf(.)
-                else if(matches($s,"^\-")) then
-                    analyze-string($s,"\-")//text() ! xqc:inspect-buf(.)
-                else if($s eq "$") then
-                    (: for rdl :)
-                    map { "t" : 10, "v" : $s}
+                if(some $x in $s satisfies ($x eq ":")) then
+                    map { "t" : 6, "v" : $s}
                 else
                     map { "t" : 9, "v" : $s}
         else
@@ -909,9 +910,18 @@ declare function xqc:to-l3($pre,$entry,$at,$normalform,$size){
     return ($pre,$s)
 };
 
-declare function xqc:normalize-query-b($query as xs:string?,$params as map(*)) {
+declare function xqc:to-buffer($query as xs:string*) {
+    string-to-codepoints($query) ! codepoints-to-string(.)
+};
+
+declare function xqc:normalize-query($query as xs:string*, $params as map(*)) {
+    xqc:normalize-query-b(xqc:to-buffer($query),$params)
+};
+
+declare function xqc:normalize-query-b($buffer as xs:string*,$params as map(*)) {
     (: TODO strip comments for now :)
-    let $normalform := xqc:wrap-depth(xqc:analyze-chars(string-to-codepoints($query) ! codepoints-to-string(.)),[],1,[],map {},[],$params)
+    let $prepared-buffer := xqc:analyze-chars($buffer)
+    let $normalform := xqc:wrap-depth($prepared-buffer,[],1,[],map {},[],$params)
     let $output := $params("$transpile")
     return
         if($output eq "rdl") then
@@ -991,65 +1001,138 @@ enclosed expr (cancel on cur=old):
     clos=12 -> enc-exp and old=close-curly and cur!=close-curly
 :)
 declare function xqc:analyze-char($char) {
-    switch($char)
-        case "(" return 1
-        case ")" return 2
-        case "{" return 3
-        case "}" return 4
-        case "[" return 5
-        case "]" return 6
-        case "<" return 7
-        case ">" return 8
-        case "," return 9
-        case ";" return 10
-        case ":" return 11
-        case "&quot;" return 12
-        case "&apos;" return 13
-        case "/" return 14
-        case "=" return 15
-        default return ()
+    if($char eq "(") then
+        1
+    else if($char eq ")") then
+        2
+    else if($char eq "{") then
+        3
+    else if($char eq "}") then
+        4
+    else if($char eq "[") then
+        5
+    else if($char eq "]") then
+        6
+    else if($char eq "<") then
+        7
+    else if($char eq ">") then
+        8
+    else if($char eq ",") then
+        9
+    else if($char eq ";") then
+        10
+    else if($char eq ":") then
+        11
+    else if($char eq "&quot;") then
+        12
+    else if($char eq "&apos;") then
+        13
+    else if($char eq "/") then
+        14
+    else if($char eq "=") then
+        15
+    else if(matches($char,"\p{N}")) then
+        16
+    else
+        99
+(:        case  return 1:)
+(:        case ")" return 2:)
+(:        case "{" return 3:)
+(:        case "}" return 4:)
+(:        case "[" return 5:)
+(:        case "]" return 6:)
+(:        case "<" return 7:)
+(:        case ">" return 8:)
+(:        case "," return 9:)
+(:        case ";" return 10:)
+(:        case ":" return 11:)
+(:        case "&quot;" return 12:)
+(:        case "&apos;" return 13:)
+(:        case "/" return 14:)
+(:        case "=" return 15:)
+(:        default return ():)
 };
 
 declare function xqc:analyze-chars($chars) {
-    xqc:analyze-chars((),tail($chars),head($chars),0,(),0,false(),false(),false(),false(),false(),false(),0)
+    xqc:analyze-chars((),tail($chars),head($chars),0,(),0,false(),false(),false(),false(),false(),false(),false(),0)
 };
 
-declare function xqc:analyze-chars($ret,$chars,$char,$old-type,$buffer,$string,$comment,$opentag,$closetag,$attrkey,$attrval,$enc-expr,$opencount) {
+declare function xqc:flag-to-expr($flag) {
+    if($flag eq 2) then
+        7
+    else if($flag eq 4) then
+        11
+    else if($flag eq 6) then
+        12
+    else if($flag eq 8) then
+        2
+    else
+        9
+};
+
+declare function xqc:inspect-tokens($char,$next,$type,$buffer) {
+        (
+            if(exists($buffer)) then
+                let $nu := console:log($buffer) return
+                xqc:inspect-buf($buffer)
+            else
+                (),
+            if($type = (1,3,5)) then
+                map {"t": 1, "v": $char}
+            else if($type = (2,4,6)) then
+                map {"t": 2, "v": $char}
+            else if($type eq 9) then
+                map {"t": 3, "v": $char}
+            else if($type eq 10) then
+                map {"t": 2, "v": $char}
+            else if($type = (7,8,11,14)) then
+                xqc:inspect-buf($char)
+            else
+                ()
+        )
+};
+
+declare function xqc:analyze-chars($ret,$chars,$char,$old-type,$buffer,$string,$was-number,$comment,$opentag,$closetag,$attrkey,$attrval,$enc-expr,$opencount) {
     (: if the type changes, flush the buffer :)
     (: TODO:
         * WS for XML
         * type 10 instead of 0 for enclosed expression
+        * revert to pair checking, tokenize all chars here
     :)
     let $type := 
-        if($string) then
+        if($string ne 0) then
             (: skip anything but closers :)
-            if($char eq "&quot;") then
+            if($string eq 12 and $char eq "&quot;") then
                 12
-            else if($char eq "&apos;") then
+            else if($string eq 13 and $char eq "&apos;") then
                 13
             else
-                $old-type
+                0
         else if(matches($char,"\s")) then
             0
         else
             xqc:analyze-char($char)
     let $zero := if(($comment,$opentag,$closetag) = true()) then false() else $string eq 0
-    let $flag := 
-        if($zero) then
+    let $number := $zero and $type eq 16
+    let $next := head($chars)
+    let $flag :=
+        if($number) then
+            ()
+        else if($zero) then
             if($type = (12,13)) then
                 1 (: open string :)
-            else if($type eq 11 and $old-type eq 1) then
+            else if($type eq 1 and $next eq ":") then
                 3 (: open comment :)
-            else if($old-type eq 7) then
-                if(matches($char,"[\p{L}\p{N}\-_:]")) then
+            else if($type eq 7) then
+                if(matches($next,"[\p{L}\p{N}\-_:]")) then
                     5 (: open opentag :)
-                else if($type eq 14 and head($opencount) gt 0) then
+                else if($next eq "/" and head($opencount) gt 0) then
                     7 (: open closetag :)
                 else
                     ()
-            else if($type eq 3 and head($opencount) gt 0) then
+            else if($type eq 3 and $old-type ne 3 and $next ne "{" and head($opencount) gt 0) then
                 11 (: open enc-expr :)
-            else if($enc-expr and $type eq 4) then
+            else if($enc-expr and $type eq 4 and $next ne "}") then
                 12 (: close enc-expr :)
             else
                 ()
@@ -1072,20 +1155,20 @@ declare function xqc:analyze-chars($ret,$chars,$char,$old-type,$buffer,$string,$
                     ()
             else if(exists($buffer)) then
                 string-join(($buffer,$char))
-            else
+            else if($type ne 11 and $type ne 15 and $type ne 99) then
                 $char
+            else if($was-number and $number eq false()) then
+                string-join($buffer)
+            else
+                ()
         return
             ($ret,
                 if($flag = (2,4,6,8) and $emit-buffer) then
-                    map { "t":(if($flag eq 2) then
-                            7
-                        else if($flag eq 8) then
-                            2
-                        else
-                            9 + $flag div 2
-                        ),"v":$emit-buffer}
+                    map { "t":xqc:flag-to-expr($flag),"v":$emit-buffer}
+                else if($zero) then
+                    xqc:inspect-tokens($char,$next,$type,$buffer)
                 else
-                    tokenize($emit-buffer,";") ! xqc:prepare-tokens(.) ! xqc:inspect-buf(.)
+                    ()
             )
     else
         let $opencount :=
@@ -1095,54 +1178,79 @@ declare function xqc:analyze-chars($ret,$chars,$char,$old-type,$buffer,$string,$
                 (head($opencount) - 1,tail($opencount))
             else
                 $opencount
-        let $nu := console:log(map {
-            "type": $type,
-            "char":$char,
-            "flag":$flag,
-            "buffer":$buffer,
-            "comment":$comment,
-            "opencount":$opencount,
-            "zero": $zero,
-            "enc-expr":$enc-expr,
-            "ret":$ret
-        })
         (: closers van string, comment, opentag, closetag moeten worden vervangen :)
         let $emit-buffer :=
-            if($flag and exists($buffer)) then
-                let $buffer := 
-                    if($flag = (3,4,5,7)) then 
-                        subsequence($buffer,1,count($buffer) - 1)
-                    else
-                        $buffer
-(:                    let $buffer := $buffer[matches(.,"^\s*$") eq false()]:)
-                return
+            if($flag) then
+                if(exists($buffer)) then
                     if(exists(tail($buffer)) or matches($buffer,"^\s*$") eq false()) then
                         string-join($buffer)
                     else
                         ()
+                else
+                    ()
+            else if($zero) then
+                if($type eq 11 and $was-number) then
+                    $char
+                else if($was-number and $number eq false()) then
+                    string-join($buffer)
+                else if($type eq 0) then
+                    if(exists($buffer) and matches(string-join($buffer),"group|instance|treat|cast|castable|order")) then
+                        ()
+                    else
+                        $char
+                else if($type ne 11 and $type ne 15 and $type ne 99) then
+                    $char
+                else
+                    ()
             else
                 ()
+        let $nu := console:log(map {
+            "type": $type,
+            "flag": $flag,
+            "char": $char,
+            "emit": $emit-buffer,
+            "buf": $buffer,
+            "was": $was-number,
+            "string": $string,
+            "zero": $zero
+        })
         return xqc:analyze-chars(
             ($ret,
-                if($flag = (2,4,6,8) and $emit-buffer) then
-                    map {
-                        "t": (if($flag eq 2) then
-                            7
-                        else if($flag eq 8) then
-                            2
-                        else
-                            9 + $flag div 2
-                        ),
-                        "v":$emit-buffer
-                    }
+                if($flag = (2,4,6,8)) then
+                    if($emit-buffer) then
+                        map {
+                            "t": xqc:flag-to-expr($flag),
+                            "v":$emit-buffer
+                        }
+                    else
+                        ()
+                else if($emit-buffer) then
+                    if($type eq 0 and empty($buffer)) then
+                        ()
+                    else if($flag = (7,11) or head($opencount) gt 0) then
+                        map {
+                            "t": 7,
+                            "v": $emit-buffer
+                        }
+                    else if($number) then
+                        map { "t": 8, "v": $emit-buffer }
+                    else if($zero) then
+                        xqc:inspect-tokens($char,$next,$type,$buffer)
+                    else
+                        ()
                 else
-                    tokenize($emit-buffer,";") ! xqc:prepare-tokens(.) ! xqc:inspect-buf(.)
+                    ()
             ),
             tail($chars),
-            head($chars),
-            if($type = (12,13)) then 0 else $type,
-            if($flag) then
-                if($flag eq 5 and $char) then $char else ()
+            $next,
+            if($type eq 0) then $old-type else $type,
+            if($emit-buffer) then
+                ()
+            else if($comment and $type eq 11) then
+                (: prevent buffering colons in comments :)
+                if(empty($buffer)) then () else if($next eq ")") then $buffer else ($buffer,$char)
+            else if($zero and $flag) then
+                $buffer
             else
                 ($buffer,$char),
             if($flag eq 1) then
@@ -1151,6 +1259,7 @@ declare function xqc:analyze-chars($ret,$chars,$char,$old-type,$buffer,$string,$
                 0
             else
                 $string,
+            $number,
             if($flag eq 3) then
                 true()
             else if($flag eq 4) then

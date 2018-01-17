@@ -49,11 +49,10 @@ declare function dawg:trav-loop($ret,$word,$length,$b,$path,$i){
                             [$ret, $path]
 };
 
-declare function dawg:traverse($tmp,$word){
-	let $b := ""
+declare function dawg:traverse($tmp,$buffer){
 	let $ret := $tmp(1)
 	let $path := if(array:size($tmp) gt 1) then $tmp(2) else []
-	return dawg:trav-loop($ret,analyze-string($word,".")//text(),string-length($word),$b,$path,0)
+	return dawg:trav-loop($ret,$buffer,count($buffer),"",$path,0)
 };
 
 declare function dawg:loop($entry, $ret, $cp, $word, $pos, $path){
