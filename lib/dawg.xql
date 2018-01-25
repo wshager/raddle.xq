@@ -15,19 +15,21 @@ declare function dawg:backtrack($path,$b){
         ()
 };
 
-declare function dawg:trav-loop($ret,$word,$length,$b,$path,$i){
+declare function dawg:traverse($ret,$word){
+    dawg:traverse($ret,$word,"",[])
+};
+
+declare function dawg:traverse($ret,$word,$b,$path){
     if(empty($ret) or ($ret instance of array(*) and array:size($ret) eq 0)) then
         ()
     else
-        if($i lt $length) then
-            let $i := $i + 1
-            let $c := $word[$i]
+        if(exists($word)) then
+            let $c := head($word)
             let $b := concat($b,$c)
             let $tmp := dawg:find($ret,$c,$b,$path)
         	let $ret := $tmp(1)
         	let $path := $tmp(2)
-        	return
-        		dawg:trav-loop($ret,$word,$length,$b,$path,$i)
+        	return dawg:traverse($ret,tail($word),$b,$path)
         else
             let $ret :=
                 if($ret instance of array(*)) then
@@ -47,12 +49,6 @@ declare function dawg:trav-loop($ret,$word,$length,$b,$path,$i){
                             $entry
                         else
                             [$ret, $path]
-};
-
-declare function dawg:traverse($tmp,$buffer){
-	let $ret := $tmp(1)
-	let $path := if(array:size($tmp) gt 1) then $tmp(2) else []
-	return dawg:trav-loop($ret,$buffer,count($buffer),"",$path,0)
 };
 
 declare function dawg:loop($entry, $ret, $cp, $word, $pos, $path){
