@@ -23,7 +23,7 @@ declare function local:restore-string($t,$v,$strings){
         $v
 };
 
-let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "", "$transpile": "rdl"}
+let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "rdl"}
 let $params :=
         if($params("$compat") eq "xquery") then
             map:put(map:put($params,"$operators",$xqc:operators),"$operator-map",$xqc:operator-map)
@@ -41,7 +41,7 @@ let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $di
 (:let $c := array { local:normalize($query,$params) }:)
 (:return local:serialize($c):)
 let $query := '
-fold-left(to(1,10)),0,quote-typed(function((item(),item()),item()),{$(acc,$(1)),$(x,$(2)),add($(acc),$(x))}))
+fold-left(1 to 10,0,function($acc,$x) { $acc + $x })
 '
 return local:serialize(xqc:normalize-query($query,$params))
 (:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query))):)
