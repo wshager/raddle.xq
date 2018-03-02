@@ -23,28 +23,15 @@ declare function local:restore-string($t,$v,$strings){
         $v
 };
 
-let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "rdl"}
-let $params :=
-        if($params("$compat") eq "xquery") then
-            map:put(map:put($params,"$operators",$xqc:operators),"$operator-map",$xqc:operator-map)
-        else
-            $params
 let $file := "xq-compat-b"
 let $dir := "lib"
-let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8")
+(:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
 
-(:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/raddled/" || $file || ".rdl"), "utf-8"):)
-(:let $temp := xqc:dawg-find($xqc:operator-dawg,"d","d",$xqc:operator-map,false(),()):)
-(:let $temp := xqc:dawg-find($temp(2),"e","de",$xqc:operator-map,false(),$temp(1)):)
-(:return xqc:dawg-find($temp(2),"c","dec",$xqc:operator-map,false(),$temp(1)):)
-(:let $rdl := json-doc("/db/apps/raddle.xq/ast/" || $file || ".json"):)
-(:let $c := array { local:normalize($query,$params) }:)
-(:return local:serialize($c):)
-let $query := '
-fold-left(1 to 10,0,function($acc,$x) { $acc + $x })
-'
+let $query := '<test as="bla" bs="bli"></test>'
+let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "l3"}
+
 return local:serialize(xqc:normalize-query($query,$params))
-(:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query))):)
+(:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query),$params("$compat") eq "xquery")):)
 (:return local:serialize(dawg:traverse([map {"_k":"and","_v":400}],("n"),"a",[])):)
 (:return xmldb:store("/db/apps/raddle.xq/tests","l3.json",local:serialize($c),"application/json"):)
 
