@@ -410,13 +410,14 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
     let $close-then := $type eq 208 and $has eq 207
 (:    let $nu := if($close-then) then console:log(("has-params: ",$has-params,", is-type: ",$has-typesig," has-else: ",$has eq 208)) else ():)
     (: else adds a closing bracket :)
-(:    let $nu := console:log($o):)
+    let $nu := console:log($o)
     let $nu := console:log(map {
         "v":$v,
         "d":$d,
         "has":$has,
         "matching":$matching,
         "ocur":$ocur,
+        "has-typesig":$has-typesig,
         "has-params":$has-params,
         "has-ass":$has-ass,
         "is-body":$is-body, 
@@ -494,7 +495,10 @@ declare function xqc:unwrap($cur,$r,$d,$o,$i,$p){
 (:            let $nu := if($is-let) then console:log($tpl) else ():)
             let $o :=
                 if($has-typesig) then
-                    a:pop(a:pop($o))
+                    if($t eq 3) then
+                        a:pop($o)
+                    else
+                        a:pop(a:pop($o))
                 else if($has-params or $has-constr or ($has-ass and xqc:last($r,$size)("t") ne 3) or $is-body or $has-af or $matching or $close-then or $is-xret or $is-x or $has eq 2600) then
                     a:pop($o)
                 else
@@ -723,7 +727,7 @@ declare function xqc:process($cur as map(*), $ret as array(*), $d as xs:integer,
                     let $has-ass := $ocur("v") eq 210
                     let $tmp := xqc:unwrap(if($has-ass) then xqc:tpl(4,$d,209) else $cur, $ret, $d, $o, $i,  $p)
                     let $d := $tmp("d")
-                    let $has-typesig := $has-op and $ocur("v") eq 2400
+(:                    let $has-typesig := $has-op and $ocur("v") eq 2400:)
                     let $tpl :=
                         if($has-ass) then
                             (xqc:tpl(10,$d,"$"),xqc:tpl(1,$d,1))
