@@ -7,46 +7,27 @@ import module namespace dawg="http://lagua.nl/dawg" at "../lib/dawg.xql";
 import module namespace a="http://raddle.org/array-util" at "/db/apps/raddle.xq/lib/array-util.xql";
 import module namespace console="http://exist-db.org/xquery/console";
 
-
-declare function local:serialize($dict){
-	serialize($dict,
+declare function local:serialize($dict) {
+    serialize($dict,
 		<output:serialization-parameters>
 			<output:method>json</output:method>
 		</output:serialization-parameters>)
 };
 
+let $compat := request:get-parameter("compat","xquery")
+let $transpile := request:get-parameter("transpile","rdl")
+let $query := ''
 
-declare function local:restore-string($t,$v,$strings){
-    if($t eq 7 and matches($v,"^%.*%$")) then
-        $strings[position() eq xs:integer(replace($v,"%",""))]/string()
-    else
-        $v
-};
+(:return local:serialize(xqc:normalize-query($query,map { "$compat": $compat, "$transpile": $transpile })):)
+(:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query),true())):)
 
-let $file := "xq-compat-b"
-let $dir := "lib"
-(:let $query := util:binary-to-string(util:binary-doc("/db/apps/raddle.xq/" || $dir || "/" || $file || ".xql"), "utf-8"):)
-
-let $query := '<test as="bla" bs="bli"></test>'
-let $params := map { "$raddled" := "/db/apps/raddle.xq/raddled", "$callstack": [], "$compat": "xquery", "$transpile": "l3"}
-
-return local:serialize(xqc:normalize-query($query,$params))
-(:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query),$params("$compat") eq "xquery")):)
-(:return local:serialize(dawg:traverse([map {"_k":"and","_v":400}],("n"),"a",[])):)
-(:return xmldb:store("/db/apps/raddle.xq/tests","l3.json",local:serialize($c),"application/json"):)
-
-(:return xmldb:store("/db/apps/raddle.xq","operator-trie.json",local:serialize($xqc:operator-trie),"application/json"):)
-
-(:let $rdl := rdl:parse($query,$params):)
-
-(:return xmldb:store("/db/apps/raddle.xq/ast",$file || ".json",local:serialize($rdl),"application/json"):)
-(:return xmldb:store("/db/apps/raddle.xq/js",$file || ".js",js:transpile($rdl, $params),"text/javascript"):)
-(:return xmldb:store("/db/apps/raddle.xq/raddled", $file || ".rdl",rdl:stringify($rdl,$params),"text/plain"):)
-
-(:return local:serialize($rdl):)
-(:return rdl:stringify($rdl,$params):)
-(:return js:transpile($rdl,$params):)
-(:return xmldb:store("/db/data/test","test.js",js:transpile($rdl, $params),"text/javascript"):)
-(:let $module := rdl:exec($query,$params):)
-(:let $fn := $module("$exports")("test:add#2"):)
-(:return $fn([2,3]):)
+let $a := [1,2,3,4]
+return local:serialize(a:reduce-ahead($a,function($pre,$entry,$next,$at) {
+    let $nu := console:log(map {
+        "pre":$pre,
+        "entry":$entry,
+        "at":$at,
+        "next":$next
+    })
+    return if($next eq 4) then $pre else $pre + $entry
+},0))
