@@ -1146,7 +1146,7 @@ declare function xqc:normalize-query($query as xs:string, $params as map(*)) {
     let $query := replace($query,"function\(\*\)","function(()*,item()*)")
     let $query := replace($query,"map\(\*\)","map(xs:anyAtomicType,item()*)")
     let $query := replace($query,"array\(\*\)","array(item()*)")
-    return xqc:normalize-query-b(xqc:to-buffer($query),$params)
+    return xqc:analyze-chars(xqc:to-buffer($query),$params)
 };
 
 declare function xqc:to-rdl($pre,$entry) {
@@ -1169,11 +1169,6 @@ declare function xqc:to-rdl($pre,$entry) {
                     ""
     )
 };
-
-declare function xqc:normalize-query-b($buffer as xs:string*,$params as map(*)) {
-    xqc:analyze-chars($buffer,$params)
-};
-
 
 (:
 ws = 0
