@@ -15,19 +15,12 @@ declare function local:serialize($dict) {
 };
 
 let $compat := request:get-parameter("compat","xquery")
-let $transpile := request:get-parameter("transpile","rdl")
-let $query := ''
+let $transpile := request:get-parameter("transpile","l3")
+let $query := '
+declare function local:test() {
+    ()
+};
+1 + 2
+'
 
-(:return local:serialize(xqc:normalize-query($query,map { "$compat": $compat, "$transpile": $transpile })):)
-(:return local:serialize(xqc:analyze-chars(xqc:to-buffer($query),true())):)
-
-let $a := [1,2,3,4]
-return local:serialize(a:reduce-ahead($a,function($pre,$entry,$next,$at) {
-    let $nu := console:log(map {
-        "pre":$pre,
-        "entry":$entry,
-        "at":$at,
-        "next":$next
-    })
-    return if($next eq 4) then $pre else $pre + $entry
-},0))
+return local:serialize(xqc:normalize-query($query,map { "$compat": $compat, "$transpile": $transpile }))

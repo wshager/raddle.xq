@@ -57,7 +57,7 @@ declare function a:reduce-around-at($array,$function,$zero,$last-seed,$next-seed
 	a:reduce-around-at($array,$function,$zero,$last-seed,$next-seed,1)
 };
 
-declare function a:reduce-around-at($array as array(*),$function as function(item()*,item()*,item()*,item()*,xs:integer) as item()*,$zero,$last-seed,$next-seed,$at as xs:integer) {
+declare function a:reduce-around-at($array as array(*),$function,$zero,$last-seed,$next-seed,$at) {
     let $tmp := map {
         "out":$zero,
         "last":$last-seed,
@@ -88,7 +88,7 @@ declare function a:reduce-ahead-at($array as array(*),$function,$zero,$next-seed
 	a:reduce-ahead-at($array,$function,$zero,$next-seed,1)
 };
 
-declare function a:reduce-ahead-at($array as array(*),$function as function(item()*,item()*,item()*,xs:integer) as item()*,$zero,$next-seed,$at as xs:integer) {
+declare function a:reduce-ahead-at($array as array(*),$function,$zero,$next-seed,$at) {
     let $tmp := map {
         "out":$zero,
         "entry":array:head($array),

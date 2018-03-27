@@ -29,6 +29,30 @@ declare variable $xqc:ncname := concat("^[",$xqc:ncform,"]");
 declare variable $xqc:qform := concat("[",$xqc:ncform,":]+");
 declare variable $xqc:qname := concat("^",$xqc:qform,"(#\p{N}+)?$");
 
+declare variable $xqc:chars := map {
+    "(": 1,
+    ")": 2,
+    "{": 3,
+    "}": 4,
+    "[": 2001,
+    "]": 2002,
+    ",": 100,
+    ">": 505,
+    "<": 507,
+    "=": 509,
+    ";": 5,
+    ":": 2600,
+    "/": 1901,
+    "!": 1800,
+    "?": 2003,
+    "*": 904,
+    ".": 8,
+    "$": 9,
+    "#": 14,
+    "&quot;": 6,
+    "&apos;": 7
+};
+
 declare variable $xqc:operators as map(xs:integer, xs:string) := map {
     1:"(",
     2:")",
@@ -1225,50 +1249,8 @@ enclosed expr (cancel on cur=old):
 
 (: blocking chars :)
 declare function xqc:analyze-char($char) {
-    if($char eq "(") then
-        1
-    else if($char eq ")") then
-        2
-    else if($char eq "{") then
-        3
-    else if($char eq "}") then
-        4
-    else if($char eq "[") then
-        2001
-    else if($char eq "]") then
-        2002
-    else if($char eq ",") then
-        100
-    else if($char eq ">") then
-        505
-    else if($char eq "<") then
-        507
-    else if($char eq "=") then
-        509
-    else if($char eq ";") then
-        5
-    else if($char eq ":") then
-        2600
-    else if($char eq "+") then
-        802
-    else if($char eq "/") then
-        1901
-    else if($char eq "!") then
-        1800
-    else if($char eq "?") then
-        2003
-    else if($char eq "*") then
-        904
-    else if($char eq ".") then
-        8
-    else if($char eq "$") then
-        9
-    else if($char eq "#") then
-        14
-    else if($char eq "&quot;") then
-        6
-    else if($char eq "&apos;") then
-        7
+    if(map:contains($xqc:chars,$char)) then
+        $xqc:chars($char)
     else if(matches($char,"\s")) then
         10
     else if(matches($char,"\p{N}")) then
@@ -1547,6 +1529,7 @@ declare function xqc:char-reducer($flags,$next) {
                 else
                     $flags
             let $flags := map:put($flags,"i",map {})
+            let $flags := map:put($flags,"d",1)
             return map:put($flags,"r",[])
         else
             $flags
