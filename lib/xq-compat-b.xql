@@ -149,16 +149,16 @@ declare variable $xqc:operators as map(xs:integer, xs:string) := map {
 	2203: "comment",
 	2204: "document-node",
 	2205: "element",
-	2206: "empty-sequence",
-	2207: "function",
-	2208: "item",
-	2209: "map",
-	2210: "namespace-node",
-	2211: "node",
-	2212: "processing-instruction",
-	2213: "schema-attribute",
-	2214: "schema-element",
-	2215: "text",
+	2206: "function",
+	2207: "map",
+	2208: "namespace-node",
+	2209: "processing-instruction",
+	2210: "text",
+	2211: "empty-sequence",
+	2212: "item",
+	2213: "node",
+	2214: "schema-attribute",
+	2215: "schema-element",
 	2400: "as",
 	2501: "(:",
 	2502: ":)",
@@ -345,7 +345,7 @@ declare function xqc:is-qname($b) {
     matches(string-join($b),$xqc:qname)
 };
 
-declare function xqc:inspect-buf($s){
+declare function xqc:inspect-buf($s, $type, $next){
     if(empty($s)) then
         ()
     else
@@ -360,7 +360,19 @@ declare function xqc:inspect-buf($s){
             else
                 map { "t" : 14, "v" : $s}
         else
-            map { "t" : 4, "v" : $ret}
+            (: FIXME a lot to fix here... next may be whitespace, anon detect is a hack  :)
+            let $ret :=
+                if($ret gt 2100 and $ret lt 2200) then
+                    if($type eq 1 or $next eq "(") then
+                        if($ret eq 2106 and $next = (")","$")) then
+                            $ret
+                        else
+                            $ret + 100
+                    else
+                        $ret
+                else
+                    $ret
+            return map { "t" : 4, "v" : $ret}
 };
 
 declare function xqc:incr($a){
@@ -1435,7 +1447,7 @@ declare function xqc:char-reducer($flags,$next) {
         if($flag = (2,4,6,7,8,9,10) or $was-number or $was-var) then
             ()
         else if($emit-buffer and exists($buffer) and $xq-compat) then
-            xqc:inspect-buf($buffer)
+            xqc:inspect-buf($buffer, $type, $next)
         else
             ()
     let $fix-quot := (exists($tpl) and $tpl("t") eq 7 and $type eq 6)
