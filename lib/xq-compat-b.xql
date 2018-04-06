@@ -49,6 +49,7 @@ declare variable $xqc:chars := map {
     ".": 8,
     "$": 9,
     "#": 14,
+    "+": 802,
     "&quot;": 6,
     "&apos;": 7
 };
